@@ -10,9 +10,16 @@
 - Swift 5.10+, SwiftUI, UIKit (UIViewRepresentable wrappers)
 - PencilKit (`PKCanvasView`, `PKDrawing`, `PKInkingTool`, `PKEraserTool`)
 - Core Image (`CIPhotoEffectMono`, `CIEdges`, `CIColorInvert`)
-- XCTest (unit + UI tests)
-- iOS 17.0 minimum (needed for `PKInkingTool.InkType.crayon` and `.watercolor`)
+- iOS 26.0 minimum (project setting — well above the iOS 17 needed for `.crayon` / `.watercolor`)
 - iPad-only target
+
+## v1 execution adjustments (2026-05-28)
+
+For v1 ship velocity, the following plan items are **deferred**:
+- All `SketchbookTests/` files and `xcodebuild test` invocations in tasks below — no unit-test target was added.
+- All `SketchbookUITests/` files (Task 37) — no UI-test target was added.
+
+Each task's "write the failing test", "run tests — expect FAIL", "run tests — expect PASS" steps are replaced by a single `xcodebuild -scheme Sketchbook -destination 'generic/platform=iOS' build` (or simulator destination) to confirm the implementation compiles. Manual on-device verification (Task 38) remains. Tests can be added back in v1.1 once core UX is stable.
 
 ---
 
