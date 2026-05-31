@@ -6,6 +6,7 @@ struct PencilCanvas: UIViewRepresentable {
     let tool: PKTool
     let allowFingerDrawing: Bool
     let onStrokeEnd: () -> Void
+    let onCanvasReady: (PKCanvasView) -> Void
 
     func makeUIView(context: Context) -> PKCanvasView {
         let canvas = PKCanvasView()
@@ -21,6 +22,7 @@ struct PencilCanvas: UIViewRepresentable {
         if !drawingData.isEmpty, let drawing = try? PKDrawing(data: drawingData) {
             canvas.drawing = drawing
         }
+        onCanvasReady(canvas)
         return canvas
     }
 

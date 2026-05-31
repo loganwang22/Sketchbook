@@ -14,6 +14,11 @@ final class DrawingViewModel: ObservableObject {
     @Published var selectedColor: ColorRGBA = KidPalette.colors[9].color // charcoal
 
     private(set) var drawing: Drawing
+    weak var canvasRef: PKCanvasView?
+    var canUndo: Bool { canvasRef?.undoManager?.canUndo ?? false }
+    var canRedo: Bool { canvasRef?.undoManager?.canRedo ?? false }
+    func undo() { canvasRef?.undoManager?.undo() }
+    func redo() { canvasRef?.undoManager?.redo() }
     private let store: DrawingStore
     private var saveTask: Task<Void, Never>?
     private let debounce: TimeInterval

@@ -41,14 +41,15 @@ struct DrawingView: View {
             PencilCanvas(drawingData: $viewModel.pkDrawingData,
                          tool: viewModel.currentTool,
                          allowFingerDrawing: fingerPref.allowFingerDrawing,
-                         onStrokeEnd: { viewModel.scheduleSave() })
+                         onStrokeEnd: { viewModel.scheduleSave() },
+                         onCanvasReady: { viewModel.canvasRef = $0 })
 
             VStack {
                 TopBar(
                     onBack: { try? viewModel.flushSave(); dismiss() },
-                    onUndo: { /* wired in a later task via UndoManager */ },
-                    onRedo: { },
-                    canUndo: true, canRedo: true,
+                    onUndo: { viewModel.undo() },
+                    onRedo: { viewModel.redo() },
+                    canUndo: viewModel.canUndo, canRedo: viewModel.canRedo,
                     onShare: { showParentGate = .share },
                     onClear: { showParentGate = .clear },
                     onBackgroundColor: { showBackgroundPopover = true },
