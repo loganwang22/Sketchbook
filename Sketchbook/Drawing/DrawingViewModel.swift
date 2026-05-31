@@ -72,4 +72,9 @@ final class DrawingViewModel: ObservableObject {
         pkDrawingData = Data()
         try flushSave()
     }
+
+    func removePhoto() {
+        photoLayer = nil
+        try? flushSave()
+    }
 }

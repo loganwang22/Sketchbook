@@ -60,11 +60,14 @@ struct PhotoFlow: View {
             ? (ColoringPageFilter.apply(to: image) ?? image)
             : image
         let repo = DrawingRepository()
-        guard let filename = try? repo.savePhoto(processed, for: drawingId) else {
+        // Unique filename so swapping the photo changes the layer's identity, which
+        // re-triggers the canvas's image reload (a fixed "photo.png" would not).
+        let filename = "photo-\(UUID().uuidString).png"
+        guard (try? repo.savePhoto(processed, for: drawingId, filename: filename)) != nil else {
             onClose(); return
         }
         photoLayer = PhotoLayer(imageFilename: filename, mode: mode,
-                                opacity: mode == .trace ? 0.4 : 1.0)
+                                opacity: mode == .trace ? 0.35 : 1.0)
         onClose()
     }
 }
