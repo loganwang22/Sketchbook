@@ -11,6 +11,10 @@ struct TopBar: View {
     let onBackgroundColor: () -> Void
     let onToggleFingerDrawing: () -> Void
     let fingerDrawingOn: Bool
+    let hasPhoto: Bool
+    let photoHidden: Bool
+    let onTogglePhoto: () -> Void
+    let onRemovePhoto: () -> Void
 
     var body: some View {
         HStack {
@@ -25,10 +29,20 @@ struct TopBar: View {
                 .disabled(!canRedo)
                 .opacity(canRedo ? 1 : 0.4)
                 .accessibilityLabel("Redo")
+            if hasPhoto {
+                chipButton(systemName: photoHidden ? "eye.slash" : "eye", action: onTogglePhoto)
+                    .accessibilityLabel(photoHidden ? "Show picture" : "Hide picture")
+            }
             Menu {
                 Button { onShare() } label: { Label("Share", systemImage: "square.and.arrow.up") }
                 Button { onBackgroundColor() } label: { Label("Background", systemImage: "rectangle.fill") }
+                Divider()
                 Button(role: .destructive) { onClear() } label: { Label("Clear canvas", systemImage: "trash") }
+                if hasPhoto {
+                    Button(role: .destructive) { onRemovePhoto() } label: {
+                        Label("Remove picture", systemImage: "photo.badge.minus")
+                    }
+                }
                 Divider()
                 Button { onToggleFingerDrawing() } label: {
                     Label(fingerDrawingOn ? "Pencil-only" : "Let me draw with my finger",
@@ -59,5 +73,7 @@ struct TopBar: View {
     TopBar(onBack: {}, onUndo: {}, onRedo: {},
            canUndo: true, canRedo: false,
            onShare: {}, onClear: {}, onBackgroundColor: {},
-           onToggleFingerDrawing: {}, fingerDrawingOn: false)
+           onToggleFingerDrawing: {}, fingerDrawingOn: false,
+           hasPhoto: true, photoHidden: false,
+           onTogglePhoto: {}, onRemovePhoto: {})
 }

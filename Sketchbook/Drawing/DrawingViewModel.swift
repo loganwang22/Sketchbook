@@ -6,9 +6,10 @@ import PencilKit
 
 @MainActor
 final class DrawingViewModel: ObservableObject {
-    @Published var pkDrawingData: Data
-    @Published var backgroundColor: ColorRGBA
-    @Published var photoLayer: PhotoLayer?
+    @Published var pkDrawingData: Data { didSet { markDirty() } }
+    @Published var backgroundColor: ColorRGBA { didSet { markDirty() } }
+    @Published var photoLayer: PhotoLayer? { didSet { markDirty() } }
+    @Published var photoHidden = false   // transient view toggle, not part of the artwork
     @Published var selectedBrush: BrushKind = .pen
     @Published var selectedSize: BrushSize = .medium
     @Published var selectedColor: ColorRGBA = KidPalette.colors[9].color // charcoal
@@ -19,9 +20,13 @@ final class DrawingViewModel: ObservableObject {
     var canRedo: Bool { canvasRef?.undoManager?.canRedo ?? false }
     func undo() { canvasRef?.undoManager?.undo() }
     func redo() { canvasRef?.undoManager?.redo() }
+
     private let store: DrawingStore
     private var saveTask: Task<Void, Never>?
     private let debounce: TimeInterval
+    /// True only after a real edit. Gating saves on this keeps "open to view" from
+    /// bumping a painting's position (ordering is by last edit, not last opened).
+    private var isDirty = false
 
     init(drawing: Drawing, store: DrawingStore, debounce: TimeInterval = 1.0) {
         self.drawing = drawing
@@ -36,6 +41,8 @@ final class DrawingViewModel: ObservableObject {
         selectedBrush.pkTool(color: selectedColor.uiColor, size: selectedSize)
     }
 
+    private func markDirty() { isDirty = true }
+
     /// Called by the canvas after each stroke ends; coalesces saves on a debounce.
     func scheduleSave() {
         saveTask?.cancel()
@@ -49,11 +56,13 @@ final class DrawingViewModel: ObservableObject {
     func flushSave() throws {
         saveTask?.cancel()
         saveTask = nil
+        guard isDirty else { return }   // nothing changed — don't reorder or rewrite
         drawing.pkDrawingData = pkDrawingData
         drawing.backgroundColor = backgroundColor
         drawing.photoLayer = photoLayer
         drawing.touch()
         try store.save(drawing)
+        isDirty = false
         regenerateThumbnail()
     }
 
@@ -75,6 +84,7 @@ final class DrawingViewModel: ObservableObject {
 
     func removePhoto() {
         photoLayer = nil
+        photoHidden = false
         try? flushSave()
     }
 }
