@@ -1,17 +1,12 @@
-//
-//  SketchbookApp.swift
-//  Sketchbook
-//
-//  Created by Logan Wang on 5/27/26.
-//
-
+// Sketchbook/SketchbookApp.swift
 import SwiftUI
 
 @main
 struct SketchbookApp: App {
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            Text("Sketchbook")
+                .font(.largeTitle)
         }
     }
 }
