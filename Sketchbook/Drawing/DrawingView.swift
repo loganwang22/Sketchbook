@@ -78,6 +78,13 @@ struct DrawingView: View {
             BackgroundColorPopover(selectedColor: $viewModel.backgroundColor,
                                    onClose: { showBackgroundPopover = false })
         }
+        .sheet(isPresented: $showPhotoFlow) {
+            PhotoFlow(
+                drawingId: viewModel.drawing.id,
+                photoLayer: $viewModel.photoLayer,
+                onClose: { showPhotoFlow = false }
+            )
+        }
         .onDisappear { try? viewModel.flushSave() }
     }
 
