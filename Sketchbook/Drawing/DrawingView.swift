@@ -10,6 +10,7 @@ struct DrawingView: View {
     @State private var showBackgroundPopover = false
     @State private var showShareSheet = false
     @State private var showPhotoFlow = false
+    @State private var shareImage: UIImage?
 
     enum PendingGatedAction: Identifiable {
         case share, clear, enableFingerDrawing, openCamera, openPhotos
@@ -85,13 +86,26 @@ struct DrawingView: View {
                 onClose: { showPhotoFlow = false }
             )
         }
+        .sheet(isPresented: $showShareSheet) {
+            if let image = shareImage {
+                ShareSheet(items: [image])
+            }
+        }
         .onDisappear { try? viewModel.flushSave() }
     }
 
     private func handleGated(_ action: PendingGatedAction) {
         switch action {
         case .share:
-            showShareSheet = true   // wired in Task 34
+            let photo: UIImage? = viewModel.photoLayer.flatMap {
+                DrawingRepository().loadPhoto(for: viewModel.drawing.id, filename: $0.imageFilename)
+            }
+            shareImage = ThumbnailRenderer.render(
+                drawing: viewModel.drawing,
+                photoImage: photo,
+                canvasSize: CGSize(width: 2048, height: 1536)
+            )
+            showShareSheet = true
         case .clear:
             try? viewModel.clearCanvas()
         case .enableFingerDrawing:
