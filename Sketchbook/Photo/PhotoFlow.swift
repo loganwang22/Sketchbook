@@ -22,8 +22,9 @@ struct PhotoFlow: View {
                 PhotoSourceSheet(
                     onPick: { source in
                         switch source {
-                        case .starter: stage = .picker(source)
-                        case .camera, .library: parentGateForSource = source
+                        case .starter: stage = .picker(.starter)
+                        case .camera: stage = .picker(.camera)
+                        case .library: parentGateForSource = .library
                         }
                     },
                     onCancel: onClose

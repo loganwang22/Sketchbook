@@ -54,6 +54,18 @@ final class DrawingViewModel: ObservableObject {
         drawing.photoLayer = photoLayer
         drawing.touch()
         try store.save(drawing)
+        regenerateThumbnail()
+    }
+
+    /// Renders the current drawing (background + photo + strokes) to a thumbnail PNG
+    /// so the gallery can show a real preview. Cheap at 400×300; runs on every save.
+    private func regenerateThumbnail() {
+        let repo = DrawingRepository()
+        let photo = drawing.photoLayer.flatMap {
+            repo.loadPhoto(for: drawing.id, filename: $0.imageFilename)
+        }
+        guard let thumb = ThumbnailRenderer.render(drawing: drawing, photoImage: photo) else { return }
+        try? repo.saveThumbnail(thumb, for: drawing.id)
     }
 
     func clearCanvas() throws {

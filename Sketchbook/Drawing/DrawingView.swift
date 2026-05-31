@@ -13,14 +13,11 @@ struct DrawingView: View {
     @State private var shareImage: UIImage?
 
     enum PendingGatedAction: Identifiable {
-        case share, clear, enableFingerDrawing, openCamera, openPhotos
+        case share, clear
         var id: String {
             switch self {
             case .share: return "share"
             case .clear: return "clear"
-            case .enableFingerDrawing: return "ffd"
-            case .openCamera: return "cam"
-            case .openPhotos: return "lib"
             }
         }
     }
@@ -54,11 +51,7 @@ struct DrawingView: View {
                     onClear: { showParentGate = .clear },
                     onBackgroundColor: { showBackgroundPopover = true },
                     onToggleFingerDrawing: {
-                        if fingerPref.allowFingerDrawing {
-                            fingerPref.allowFingerDrawing = false
-                        } else {
-                            showParentGate = .enableFingerDrawing
-                        }
+                        fingerPref.allowFingerDrawing.toggle()
                     },
                     fingerDrawingOn: fingerPref.allowFingerDrawing
                 )
@@ -109,10 +102,6 @@ struct DrawingView: View {
             showShareSheet = true
         case .clear:
             try? viewModel.clearCanvas()
-        case .enableFingerDrawing:
-            fingerPref.allowFingerDrawing = true
-        case .openCamera, .openPhotos:
-            showPhotoFlow = true    // photo flow re-presents in Task 33
         }
     }
 

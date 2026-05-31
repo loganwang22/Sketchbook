@@ -23,12 +23,19 @@ struct GalleryView: View {
                     ForEach(viewModel.store.drawings) { drawing in
                         ThumbnailCell(
                             image: DrawingRepository().loadThumbnail(for: drawing.id),
-                            isWiggling: viewModel.isWiggling,
-                            onTap: { openedDrawing = drawing },
-                            onDelete: { viewModel.requestDelete(id: drawing.id) }
+                            onTap: { openedDrawing = drawing }
                         )
-                        .onLongPressGesture(minimumDuration: 0.6) {
-                            viewModel.toggleWiggle()
+                        .contextMenu {
+                            Button {
+                                viewModel.share(drawing)
+                            } label: {
+                                Label("Share", systemImage: "square.and.arrow.up")
+                            }
+                            Button(role: .destructive) {
+                                viewModel.requestDelete(id: drawing.id)
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
                         }
                     }
                 }
@@ -44,6 +51,9 @@ struct GalleryView: View {
                     onPass: { try? viewModel.confirmDelete() },
                     onCancel: { viewModel.cancelDelete() }
                 )
+            }
+            .sheet(item: $viewModel.shareItem) { item in
+                ShareSheet(items: [item.image])
             }
         }
     }

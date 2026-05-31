@@ -1,12 +1,19 @@
 import Foundation
 import Combine
 import SwiftUI
+import UIKit
 
 @MainActor
 final class GalleryViewModel: ObservableObject {
-    @Published var isWiggling = false
     @Published var pendingDeleteId: UUID?
+    @Published var shareItem: ShareItem?
     let store: DrawingStore
+
+    /// Wraps the rendered image so `.sheet(item:)` can present the share sheet.
+    struct ShareItem: Identifiable {
+        let id = UUID()
+        let image: UIImage
+    }
 
     init(store: DrawingStore) { self.store = store }
 
@@ -15,7 +22,7 @@ final class GalleryViewModel: ObservableObject {
         try store.createNew()
     }
 
-    func toggleWiggle() { isWiggling.toggle() }
+    // MARK: delete (parent-gated)
 
     func requestDelete(id: UUID) { pendingDeleteId = id }
 
@@ -25,5 +32,21 @@ final class GalleryViewModel: ObservableObject {
         guard let id = pendingDeleteId else { return }
         try store.delete(id: id)
         pendingDeleteId = nil
+    }
+
+    // MARK: share
+
+    /// Renders the drawing at print resolution and stages it for the share sheet.
+    func share(_ drawing: Drawing) {
+        let repo = DrawingRepository()
+        let photo = drawing.photoLayer.flatMap {
+            repo.loadPhoto(for: drawing.id, filename: $0.imageFilename)
+        }
+        guard let image = ThumbnailRenderer.render(
+            drawing: drawing,
+            photoImage: photo,
+            canvasSize: CGSize(width: 2048, height: 1536)
+        ) else { return }
+        shareItem = ShareItem(image: image)
     }
 }
