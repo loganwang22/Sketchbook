@@ -15,9 +15,9 @@ struct PencilCanvas: UIViewRepresentable {
         canvas.drawingPolicy = allowFingerDrawing ? .anyInput : .pencilOnly
         canvas.backgroundColor = .clear
         canvas.isOpaque = false
-        canvas.minimumZoomScale = 0.5
+        canvas.minimumZoomScale = 0.25
         canvas.maximumZoomScale = 4.0
-        canvas.contentSize = CGSize(width: 3000, height: 3000)
+        canvas.contentSize = CGSize(width: 6000, height: 6000)
         canvas.alwaysBounceVertical = true
         canvas.alwaysBounceHorizontal = true
         if !drawingData.isEmpty, let drawing = try? PKDrawing(data: drawingData) {
