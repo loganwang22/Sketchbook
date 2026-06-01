@@ -5,9 +5,10 @@ enum ThumbnailRenderer {
     static let defaultSize = CGSize(width: 400, height: 300)
 
     /// Composites a drawing into a flat image. Layer order mirrors the live canvas:
-    /// - trace: faint photo *below* the strokes
-    /// - colour: black line-art *on top* (multiply, so white reads as transparent)
-    /// - reference: photo is a side aid, not part of the artwork, so it's omitted
+    /// - trace: faint contour *below* the strokes
+    /// - colour: bold contour *on top*
+    /// Both contours are transparent except for the lines, so the paper colour shows.
+    /// Reference photos are a side aid, not part of the artwork, so they're omitted.
     static func render(drawing: Drawing,
                        photoImage: UIImage?,
                        canvasSize: CGSize = defaultSize) -> UIImage? {
@@ -21,7 +22,7 @@ enum ThumbnailRenderer {
             if mode == .trace, let photo = photoImage {
                 photo.draw(in: aspectFit(photo.size, into: bounds),
                            blendMode: .normal,
-                           alpha: CGFloat(drawing.photoLayer?.opacity ?? 0.35))
+                           alpha: CGFloat(drawing.photoLayer?.opacity ?? 0.5))
             }
 
             if !drawing.pkDrawingData.isEmpty,
@@ -32,7 +33,7 @@ enum ThumbnailRenderer {
 
             if mode == .coloringPage, let photo = photoImage {
                 photo.draw(in: aspectFit(photo.size, into: bounds),
-                           blendMode: .multiply,
+                           blendMode: .normal,
                            alpha: 1.0)
             }
         }

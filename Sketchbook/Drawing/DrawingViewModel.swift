@@ -9,10 +9,11 @@ final class DrawingViewModel: ObservableObject {
     @Published var pkDrawingData: Data { didSet { markDirty() } }
     @Published var backgroundColor: ColorRGBA { didSet { markDirty() } }
     @Published var photoLayer: PhotoLayer? { didSet { markDirty() } }
+    @Published var palette: [ColorRGBA] { didSet { markDirty() } }
     @Published var photoHidden = false   // transient view toggle, not part of the artwork
     @Published var selectedBrush: BrushKind = .pen
     @Published var selectedSize: BrushSize = .medium
-    @Published var selectedColor: ColorRGBA = KidPalette.colors[9].color // charcoal
+    @Published var selectedColor: ColorRGBA
 
     private(set) var drawing: Drawing
     weak var canvasRef: PKCanvasView?
@@ -35,6 +36,9 @@ final class DrawingViewModel: ObservableObject {
         self.pkDrawingData = drawing.pkDrawingData
         self.backgroundColor = drawing.backgroundColor
         self.photoLayer = drawing.photoLayer
+        let loadedPalette = drawing.palette ?? KidPalette.colors.map(\.color)
+        self.palette = loadedPalette
+        self.selectedColor = loadedPalette.last ?? KidPalette.colors[9].color
     }
 
     var currentTool: PKTool {
@@ -60,6 +64,7 @@ final class DrawingViewModel: ObservableObject {
         drawing.pkDrawingData = pkDrawingData
         drawing.backgroundColor = backgroundColor
         drawing.photoLayer = photoLayer
+        drawing.palette = palette
         drawing.touch()
         try store.save(drawing)
         isDirty = false

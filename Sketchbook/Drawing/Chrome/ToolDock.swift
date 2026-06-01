@@ -4,13 +4,14 @@ struct ToolDock: View {
     @Binding var brush: BrushKind
     @Binding var size: BrushSize
     @Binding var color: ColorRGBA
+    @Binding var palette: [ColorRGBA]
     let onPhotoTap: () -> Void
 
     var body: some View {
         HStack(spacing: 16) {
             BrushPicker(selectedBrush: $brush, selectedSize: $size)
             Divider().frame(height: 40)
-            ColorPalette(selectedColor: $color)
+            ColorPalette(palette: $palette, selectedColor: $color)
             Divider().frame(height: 40)
             Button(action: onPhotoTap) {
                 Image(systemName: "camera.fill.badge.ellipsis")
@@ -30,5 +31,6 @@ struct ToolDock: View {
     @Previewable @State var brush: BrushKind = .pen
     @Previewable @State var size: BrushSize = .medium
     @Previewable @State var color = KidPalette.colors[9].color
-    return ToolDock(brush: $brush, size: $size, color: $color, onPhotoTap: {})
+    @Previewable @State var palette = KidPalette.colors.map(\.color)
+    return ToolDock(brush: $brush, size: $size, color: $color, palette: $palette, onPhotoTap: {})
 }

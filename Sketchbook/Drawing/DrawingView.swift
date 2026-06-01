@@ -121,6 +121,7 @@ struct DrawingView: View {
             ToolDock(brush: $viewModel.selectedBrush,
                      size: $viewModel.selectedSize,
                      color: $viewModel.selectedColor,
+                     palette: $viewModel.palette,
                      onPhotoTap: { showPhotoFlow = true })
             .padding(.bottom, 12)
         }

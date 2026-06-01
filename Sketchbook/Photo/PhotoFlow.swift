@@ -56,9 +56,15 @@ struct PhotoFlow: View {
 
     private func handleMode(_ mode: PhotoLayer.Mode) {
         guard let image = pickedImage else { return }
-        let processed: UIImage = (mode == .coloringPage)
-            ? (ColoringPageFilter.apply(to: image) ?? image)
-            : image
+        // Trace and colour overlay the canvas, so they use a transparent contour to
+        // preserve the paper colour. Reference shows the real photo in the side panel.
+        let processed: UIImage
+        switch mode {
+        case .trace, .coloringPage:
+            processed = ColoringPageFilter.lineArt(from: image) ?? image
+        case .reference:
+            processed = image
+        }
         let repo = DrawingRepository()
         // Unique filename so swapping the photo changes the layer's identity, which
         // re-triggers the canvas's image reload (a fixed "photo.png" would not).
@@ -67,7 +73,7 @@ struct PhotoFlow: View {
             onClose(); return
         }
         photoLayer = PhotoLayer(imageFilename: filename, mode: mode,
-                                opacity: mode == .trace ? 0.35 : 1.0)
+                                opacity: mode == .trace ? 0.5 : 1.0)
         onClose()
     }
 }

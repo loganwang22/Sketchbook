@@ -104,12 +104,12 @@ struct PencilCanvas: UIViewRepresentable {
             }
             photoView.isHidden = (image == nil) || hidden
             photoView.alpha = CGFloat(opacity)
+            // Colour: bold contour on top of the strokes. Trace: faint contour behind
+            // them. The contour is transparent except for the lines, so the paper shows.
             if mode == .coloringPage {
                 container.bringSubviewToFront(photoView)
-                photoView.layer.compositingFilter = "multiplyBlendMode"
             } else {
                 container.sendSubviewToBack(photoView)
-                photoView.layer.compositingFilter = nil
             }
             syncPhoto()
         }
