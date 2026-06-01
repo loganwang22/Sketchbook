@@ -13,6 +13,7 @@ final class DrawingViewModel: ObservableObject {
     @Published var photoHidden = false   // transient view toggle, not part of the artwork
     @Published var editingPhoto = false  // transient: picture move/scale/rotate mode
     @Published var hudMessage: String?   // transient on-screen status (e.g. tool toggle)
+    @Published var straightLineActive = false  // Shift held: strokes snap to H/V lines
     @Published var selectedBrush: BrushKind = .pen
     @Published var selectedSize: BrushSize = .medium
     @Published var selectedColor: ColorRGBA

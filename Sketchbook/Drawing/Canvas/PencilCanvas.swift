@@ -1,5 +1,6 @@
 import SwiftUI
 import PencilKit
+import GameController
 
 /// The drawing surface. A `PKCanvasView` (the scroller) plus an optional photo layer
 /// that lives *in canvas content space* — it pans and zooms with the strokes, so a
@@ -18,6 +19,7 @@ struct PencilCanvas: UIViewRepresentable {
     let onStrokeEnd: () -> Void
     let onCanvasReady: (PKCanvasView) -> Void
     var onPencilDoubleTap: () -> Void = {}
+    var onStraightLineActiveChanged: (Bool) -> Void = { _ in }
 
     func makeUIView(context: Context) -> ArtboardContainer {
         let container = ArtboardContainer()
@@ -60,6 +62,8 @@ struct PencilCanvas: UIViewRepresentable {
         coord.container = container
         container.onLayout = { [weak coord] in coord?.syncPhoto() }
 
+        coord.lastStrokeCount = canvas.drawing.strokes.count
+        coord.startObservingKeyboard()
         coord.applyPhoto(image: photoImage, hidden: photoHidden, mode: photoMode, opacity: photoOpacity)
         onCanvasReady(canvas)
         return container
@@ -92,12 +96,91 @@ struct PencilCanvas: UIViewRepresentable {
         private var currentImage: UIImage?
         var isApplyingInitialDrawing = false
 
+        // Straight-line (Shift held) support.
+        var lastStrokeCount = 0
+        private var shiftHeld = false
+        private var isStraightening = false
+        private var keyboardObserver: NSObjectProtocol?
+
         init(_ parent: PencilCanvas) { self.parent = parent }
+
+        deinit {
+            if let keyboardObserver { NotificationCenter.default.removeObserver(keyboardObserver) }
+        }
 
         func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
             guard !isApplyingInitialDrawing else { return }
+            // When Shift is held, snap a freshly-finished stroke to a horizontal or
+            // vertical line. The guard + count check prevents the replacement (which
+            // re-fires this delegate) from looping.
+            if shiftHeld, !isStraightening,
+               canvasView.drawing.strokes.count == lastStrokeCount + 1 {
+                isStraightening = true
+                straightenLastStroke(canvasView)
+                isStraightening = false
+            }
+            lastStrokeCount = canvasView.drawing.strokes.count
             parent.drawingData = canvasView.drawing.dataRepresentation()
             parent.onStrokeEnd()
+        }
+
+        /// Replaces the last stroke with a clean axis-aligned line from its start to its
+        /// end, choosing horizontal or vertical by whichever delta is larger.
+        private func straightenLastStroke(_ canvas: PKCanvasView) {
+            var strokes = canvas.drawing.strokes
+            guard let last = strokes.last, last.path.count >= 2 else { return }
+            let path = last.path
+            let startPoint = path[0]
+            let a = startPoint.location
+            let b = path[path.count - 1].location
+            let end = abs(b.x - a.x) >= abs(b.y - a.y)
+                ? CGPoint(x: b.x, y: a.y)   // horizontal
+                : CGPoint(x: a.x, y: b.y)   // vertical
+            let length = hypot(end.x - a.x, end.y - a.y)
+            guard length > 1 else { return }
+            let steps = max(2, Int(length / 4))
+            var points: [PKStrokePoint] = []
+            for i in 0...steps {
+                let t = CGFloat(i) / CGFloat(steps)
+                let loc = CGPoint(x: a.x + (end.x - a.x) * t, y: a.y + (end.y - a.y) * t)
+                points.append(PKStrokePoint(location: loc,
+                                            timeOffset: startPoint.timeOffset,
+                                            size: startPoint.size,
+                                            opacity: startPoint.opacity,
+                                            force: startPoint.force,
+                                            azimuth: startPoint.azimuth,
+                                            altitude: startPoint.altitude))
+            }
+            let newPath = PKStrokePath(controlPoints: points, creationDate: Date())
+            strokes[strokes.count - 1] = PKStroke(ink: last.ink, path: newPath)
+            canvas.drawing = PKDrawing(strokes: strokes)
+        }
+
+        // MARK: hardware keyboard (Shift) tracking
+
+        func startObservingKeyboard() {
+            attachKeyboard(GCKeyboard.coalesced)
+            keyboardObserver = NotificationCenter.default.addObserver(
+                forName: .GCKeyboardDidConnect, object: nil, queue: .main
+            ) { [weak self] note in
+                self?.attachKeyboard(note.object as? GCKeyboard)
+            }
+        }
+
+        private func attachKeyboard(_ keyboard: GCKeyboard?) {
+            guard let input = keyboard?.keyboardInput else { return }
+            let handler: GCControllerButtonValueChangedHandler = { [weak self, weak input] _, _, _ in
+                guard let self, let input else { return }
+                let held = (input.button(forKeyCode: .leftShift)?.isPressed ?? false)
+                        || (input.button(forKeyCode: .rightShift)?.isPressed ?? false)
+                DispatchQueue.main.async {
+                    guard held != self.shiftHeld else { return }
+                    self.shiftHeld = held
+                    self.parent.onStraightLineActiveChanged(held)
+                }
+            }
+            input.button(forKeyCode: .leftShift)?.pressedChangedHandler = handler
+            input.button(forKeyCode: .rightShift)?.pressedChangedHandler = handler
         }
 
         func scrollViewDidScroll(_ scrollView: UIScrollView) { syncPhoto() }

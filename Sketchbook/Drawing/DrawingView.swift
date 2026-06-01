@@ -69,8 +69,21 @@ struct DrawingView: View {
             if let hud = viewModel.hudMessage {
                 statusHUD(hud)
             }
+
+            if viewModel.straightLineActive {
+                Label("Straight line", systemImage: "ruler")
+                    .font(.subheadline.weight(.semibold))
+                    .padding(.horizontal, 16).padding(.vertical, 8)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .overlay(Capsule().stroke(.primary.opacity(0.1)))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .padding(.top, 150)
+                    .transition(.opacity)
+                    .allowsHitTesting(false)
+            }
         }
         .animation(.easeInOut(duration: 0.2), value: viewModel.hudMessage)
+        .animation(.easeInOut(duration: 0.2), value: viewModel.straightLineActive)
         .task(id: viewModel.photoLayer?.imageFilename) {
             activePhotoImage = loadActivePhoto()
         }
@@ -120,7 +133,8 @@ struct DrawingView: View {
                                              height: viewModel.photoLayer?.offsetY ?? 0),
                          onStrokeEnd: { viewModel.scheduleSave() },
                          onCanvasReady: { viewModel.canvasRef = $0 },
-                         onPencilDoubleTap: { viewModel.togglePencilEraser() })
+                         onPencilDoubleTap: { viewModel.togglePencilEraser() },
+                         onStraightLineActiveChanged: { viewModel.straightLineActive = $0 })
         }
     }
 
