@@ -14,6 +14,7 @@ struct PencilCanvas: UIViewRepresentable {
     var photoOpacity: Double = 1.0
     let onStrokeEnd: () -> Void
     let onCanvasReady: (PKCanvasView) -> Void
+    var onPencilDoubleTap: () -> Void = {}
 
     func makeUIView(context: Context) -> ArtboardContainer {
         let container = ArtboardContainer()
@@ -46,6 +47,10 @@ struct PencilCanvas: UIViewRepresentable {
         canvas.frame = container.bounds
         canvas.autoresizingMask = [.flexibleWidth, .flexibleHeight]
 
+        let pencilInteraction = UIPencilInteraction()
+        pencilInteraction.delegate = context.coordinator
+        container.addInteraction(pencilInteraction)
+
         let coord = context.coordinator
         coord.canvas = canvas
         coord.photoView = photoView
@@ -71,7 +76,7 @@ struct PencilCanvas: UIViewRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
-    final class Coordinator: NSObject, PKCanvasViewDelegate {
+    final class Coordinator: NSObject, PKCanvasViewDelegate, UIPencilInteractionDelegate {
         var parent: PencilCanvas
         weak var canvas: PKCanvasView?
         weak var photoView: UIImageView?
@@ -94,6 +99,10 @@ struct PencilCanvas: UIViewRepresentable {
 
         func scrollViewDidScroll(_ scrollView: UIScrollView) { syncPhoto() }
         func scrollViewDidZoom(_ scrollView: UIScrollView) { syncPhoto() }
+
+        func pencilInteractionDidTap(_ interaction: UIPencilInteraction) {
+            parent.onPencilDoubleTap()
+        }
 
         func applyPhoto(image: UIImage?, hidden: Bool, mode: PhotoLayer.Mode?, opacity: Double) {
             guard let photoView, let container else { return }

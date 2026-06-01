@@ -1,11 +1,12 @@
 import SwiftUI
+import UIKit
 
 struct ColorPalette: View {
     @Binding var palette: [ColorRGBA]
     @Binding var selectedColor: ColorRGBA
     @State private var editing: EditSlot?
 
-    /// Identifies which swatch the colour wheel is editing.
+    /// Identifies which swatch the colour picker is editing.
     private struct EditSlot: Identifiable { let index: Int; var id: Int { index } }
 
     var body: some View {
@@ -15,15 +16,19 @@ struct ColorPalette: View {
             }
         }
         .sheet(item: $editing) { slot in
-            ColorWheelSheet(
-                initial: palette[slot.index],
-                onUse: { newColor in
-                    palette[slot.index] = newColor
-                    selectedColor = newColor
-                    editing = nil
-                },
-                onCancel: { editing = nil }
+            // Opens straight into the system colour picker, pre-selected to the swatch's
+            // current colour. Picking updates the swatch (and the active colour) live.
+            SystemColorPicker(
+                color: Binding(
+                    get: { palette[slot.index] },
+                    set: { newColor in
+                        palette[slot.index] = newColor
+                        selectedColor = newColor
+                    }
+                ),
+                onFinish: { editing = nil }
             )
+            .ignoresSafeArea()
         }
     }
 
@@ -42,42 +47,35 @@ struct ColorPalette: View {
     }
 }
 
-/// Full colour wheel for re-defining a single palette swatch.
-private struct ColorWheelSheet: View {
-    let initial: ColorRGBA
-    let onUse: (ColorRGBA) -> Void
-    let onCancel: () -> Void
-    @State private var working: Color
+/// Presents the iOS system colour picker directly, bound to a `ColorRGBA`.
+private struct SystemColorPicker: UIViewControllerRepresentable {
+    @Binding var color: ColorRGBA
+    let onFinish: () -> Void
 
-    init(initial: ColorRGBA, onUse: @escaping (ColorRGBA) -> Void, onCancel: @escaping () -> Void) {
-        self.initial = initial
-        self.onUse = onUse
-        self.onCancel = onCancel
-        _working = State(initialValue: initial.swiftUIColor)
+    func makeUIViewController(context: Context) -> UIColorPickerViewController {
+        let picker = UIColorPickerViewController()
+        picker.selectedColor = color.uiColor
+        picker.supportsAlpha = false
+        picker.delegate = context.coordinator
+        return picker
     }
 
-    var body: some View {
-        VStack(spacing: 24) {
-            Text("Pick any colour")
-                .font(.title2.weight(.semibold))
-            ColorPicker("", selection: $working, supportsOpacity: false)
-                .labelsHidden()
-                .scaleEffect(2.0)
-                .frame(height: 160)
-            HStack(spacing: 16) {
-                Button("Cancel") { onCancel() }
-                    .font(.title3)
-                Button { onUse(ColorRGBA(working)) } label: {
-                    Text("Use this colour")
-                        .font(.title3.weight(.semibold))
-                        .padding(.horizontal, 24).padding(.vertical, 12)
-                        .background(working, in: Capsule())
-                        .foregroundStyle(.white)
-                }
-            }
+    func updateUIViewController(_ picker: UIColorPickerViewController, context: Context) {}
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    final class Coordinator: NSObject, UIColorPickerViewControllerDelegate {
+        let parent: SystemColorPicker
+        init(_ parent: SystemColorPicker) { self.parent = parent }
+
+        func colorPickerViewController(_ viewController: UIColorPickerViewController,
+                                       didSelect color: UIColor, continuously: Bool) {
+            parent.color = ColorRGBA(Color(uiColor: color))
         }
-        .padding(48)
-        .presentationDetents([.medium])
+
+        func colorPickerViewControllerDidFinish(_ viewController: UIColorPickerViewController) {
+            parent.onFinish()
+        }
     }
 }
 

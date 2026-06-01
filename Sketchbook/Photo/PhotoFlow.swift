@@ -7,7 +7,6 @@ struct PhotoFlow: View {
 
     @State private var stage: Stage = .source
     @State private var pickedImage: UIImage?
-    @State private var parentGateForSource: PhotoSourceSheet.Source?
 
     enum Stage {
         case source
@@ -20,13 +19,7 @@ struct PhotoFlow: View {
             switch stage {
             case .source:
                 PhotoSourceSheet(
-                    onPick: { source in
-                        switch source {
-                        case .starter: stage = .picker(.starter)
-                        case .camera: stage = .picker(.camera)
-                        case .library: parentGateForSource = .library
-                        }
-                    },
+                    onPick: { source in stage = .picker(source) },
                     onCancel: onClose
                 )
             case .picker(.camera):
@@ -40,12 +33,6 @@ struct PhotoFlow: View {
                     PhotoModeSheet(preview: image, onPick: handleMode, onCancel: onClose)
                 }
             }
-        }
-        .sheet(item: $parentGateForSource) { source in
-            ParentGateSheet(
-                onPass: { parentGateForSource = nil; stage = .picker(source) },
-                onCancel: { parentGateForSource = nil }
-            )
         }
     }
 

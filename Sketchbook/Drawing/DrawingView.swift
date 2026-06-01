@@ -96,7 +96,8 @@ struct DrawingView: View {
                          photoMode: photoMode,
                          photoOpacity: viewModel.photoLayer?.opacity ?? 1.0,
                          onStrokeEnd: { viewModel.scheduleSave() },
-                         onCanvasReady: { viewModel.canvasRef = $0 })
+                         onCanvasReady: { viewModel.canvasRef = $0 },
+                         onPencilDoubleTap: { viewModel.togglePencilEraser() })
         }
     }
 
