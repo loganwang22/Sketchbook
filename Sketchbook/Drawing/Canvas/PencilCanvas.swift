@@ -12,6 +12,9 @@ struct PencilCanvas: UIViewRepresentable {
     var photoHidden: Bool = false
     var photoMode: PhotoLayer.Mode? = nil
     var photoOpacity: Double = 1.0
+    var photoScale: Double = 1
+    var photoRotation: Double = 0
+    var photoOffset: CGSize = .zero
     let onStrokeEnd: () -> Void
     let onCanvasReady: (PKCanvasView) -> Void
     var onPencilDoubleTap: () -> Void = {}
@@ -139,10 +142,15 @@ struct PencilCanvas: UIViewRepresentable {
             guard let canvas, let photoView, photoContentRect != .zero else { return }
             let z = canvas.zoomScale
             let off = canvas.contentOffset
-            photoView.frame = CGRect(x: photoContentRect.minX * z - off.x,
-                                     y: photoContentRect.minY * z - off.y,
-                                     width: photoContentRect.width * z,
-                                     height: photoContentRect.height * z)
+            // Map the photo's content rect (plus the user's edit offset) to the screen,
+            // then apply scale + rotation about its centre. Everything is multiplied by
+            // the zoom so the photo stays locked to the strokes.
+            photoView.bounds = CGRect(origin: .zero, size: photoContentRect.size)
+            let cx = photoContentRect.midX + parent.photoOffset.width
+            let cy = photoContentRect.midY + parent.photoOffset.height
+            photoView.center = CGPoint(x: cx * z - off.x, y: cy * z - off.y)
+            photoView.transform = CGAffineTransform(rotationAngle: parent.photoRotation)
+                .scaledBy(x: parent.photoScale * z, y: parent.photoScale * z)
         }
     }
 }

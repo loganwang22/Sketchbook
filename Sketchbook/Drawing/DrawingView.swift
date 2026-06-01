@@ -13,6 +13,12 @@ struct DrawingView: View {
     @State private var shareImage: UIImage?
     @State private var activePhotoImage: UIImage?
 
+    // Picture-edit gesture state (captured at gesture start).
+    @State private var editGestureActive = false
+    @State private var editBaseScale: Double = 1
+    @State private var editBaseRotation: Double = 0
+    @State private var editBaseOffset: CGSize = .zero
+
     enum PendingGatedAction: Identifiable {
         case share, clear
         var id: String {
@@ -33,6 +39,10 @@ struct DrawingView: View {
     private var artboardPhoto: UIImage? {
         photoMode == .reference ? nil : activePhotoImage
     }
+    /// Move/scale/rotate only applies to photos placed on the canvas.
+    private var canEditPhoto: Bool {
+        viewModel.photoLayer != nil && photoMode != .reference
+    }
 
     var body: some View {
         ZStack {
@@ -51,7 +61,16 @@ struct DrawingView: View {
             // Chrome sits on top at full width, so the back button and dock keep
             // their normal positions regardless of the split.
             chrome
+
+            if viewModel.editingPhoto {
+                photoEditOverlay
+            }
+
+            if let hud = viewModel.hudMessage {
+                statusHUD(hud)
+            }
         }
+        .animation(.easeInOut(duration: 0.2), value: viewModel.hudMessage)
         .task(id: viewModel.photoLayer?.imageFilename) {
             activePhotoImage = loadActivePhoto()
         }
@@ -95,6 +114,10 @@ struct DrawingView: View {
                          photoHidden: viewModel.photoHidden,
                          photoMode: photoMode,
                          photoOpacity: viewModel.photoLayer?.opacity ?? 1.0,
+                         photoScale: viewModel.photoLayer?.scale ?? 1,
+                         photoRotation: viewModel.photoLayer?.rotation ?? 0,
+                         photoOffset: CGSize(width: viewModel.photoLayer?.offsetX ?? 0,
+                                             height: viewModel.photoLayer?.offsetY ?? 0),
                          onStrokeEnd: { viewModel.scheduleSave() },
                          onCanvasReady: { viewModel.canvasRef = $0 },
                          onPencilDoubleTap: { viewModel.togglePencilEraser() })
@@ -114,8 +137,13 @@ struct DrawingView: View {
                 onToggleFingerDrawing: { fingerPref.allowFingerDrawing.toggle() },
                 fingerDrawingOn: fingerPref.allowFingerDrawing,
                 hasPhoto: viewModel.photoLayer != nil,
+                canEditPhoto: canEditPhoto,
                 photoHidden: viewModel.photoHidden,
                 onTogglePhoto: { viewModel.photoHidden.toggle() },
+                onEditPhoto: {
+                    viewModel.photoHidden = false
+                    viewModel.editingPhoto = true
+                },
                 onRemovePhoto: { viewModel.removePhoto() }
             )
             Spacer()
@@ -126,6 +154,79 @@ struct DrawingView: View {
                      onPhotoTap: { showPhotoFlow = true })
             .padding(.bottom, 12)
         }
+    }
+
+    // MARK: picture edit mode
+
+    private var photoEditOverlay: some View {
+        ZStack {
+            // Transparent surface that captures the transform gestures (so the pencil
+            // can't draw while adjusting the picture).
+            Color.black.opacity(0.001)
+                .ignoresSafeArea()
+                .contentShape(Rectangle())
+                .gesture(photoEditGesture)
+
+            VStack {
+                HStack(spacing: 16) {
+                    Label("Move • pinch • twist the picture", systemImage: "hand.draw")
+                        .font(.headline)
+                    Spacer()
+                    Button("Done") {
+                        viewModel.editingPhoto = false
+                        try? viewModel.flushSave()
+                    }
+                    .font(.headline.weight(.semibold))
+                    .buttonStyle(.borderedProminent)
+                    .buttonBorderShape(.capsule)
+                }
+                .padding(.horizontal, 24).padding(.vertical, 14)
+                .background(.regularMaterial)
+                Spacer()
+            }
+        }
+    }
+
+    private var photoEditGesture: some Gesture {
+        let drag = DragGesture()
+        let magnify = MagnifyGesture()
+        let rotate = RotateGesture()
+        return drag.simultaneously(with: magnify).simultaneously(with: rotate)
+            .onChanged { value in
+                if !editGestureActive {
+                    editGestureActive = true
+                    editBaseScale = viewModel.photoLayer?.scale ?? 1
+                    editBaseRotation = viewModel.photoLayer?.rotation ?? 0
+                    editBaseOffset = CGSize(width: viewModel.photoLayer?.offsetX ?? 0,
+                                            height: viewModel.photoLayer?.offsetY ?? 0)
+                }
+                let zoom = viewModel.canvasRef?.zoomScale ?? 1
+                let magnification = value.first?.second?.magnification ?? 1
+                let rotationDelta = value.second?.rotation.radians ?? 0
+                let translation = value.first?.first?.translation ?? .zero
+                viewModel.updatePhotoTransform(
+                    scale: editBaseScale * Double(magnification),
+                    rotation: editBaseRotation + rotationDelta,
+                    offset: CGSize(width: editBaseOffset.width + translation.width / zoom,
+                                   height: editBaseOffset.height + translation.height / zoom)
+                )
+            }
+            .onEnded { _ in
+                editGestureActive = false
+                try? viewModel.flushSave()
+            }
+    }
+
+    private func statusHUD(_ message: String) -> some View {
+        Text(message)
+            .font(.title3.weight(.bold))
+            .padding(.horizontal, 22).padding(.vertical, 12)
+            .background(.ultraThinMaterial, in: Capsule())
+            .overlay(Capsule().stroke(.primary.opacity(0.1)))
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .padding(.top, 92)
+            .transition(.opacity)
+            .allowsHitTesting(false)
     }
 
     private func handleGated(_ action: PendingGatedAction) {

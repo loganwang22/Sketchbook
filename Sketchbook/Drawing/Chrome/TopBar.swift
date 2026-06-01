@@ -12,8 +12,10 @@ struct TopBar: View {
     let onToggleFingerDrawing: () -> Void
     let fingerDrawingOn: Bool
     let hasPhoto: Bool
+    let canEditPhoto: Bool
     let photoHidden: Bool
     let onTogglePhoto: () -> Void
+    let onEditPhoto: () -> Void
     let onRemovePhoto: () -> Void
 
     var body: some View {
@@ -36,6 +38,11 @@ struct TopBar: View {
             Menu {
                 Button { onShare() } label: { Label("Share", systemImage: "square.and.arrow.up") }
                 Button { onBackgroundColor() } label: { Label("Background", systemImage: "rectangle.fill") }
+                if canEditPhoto {
+                    Button { onEditPhoto() } label: {
+                        Label("Edit picture", systemImage: "crop.rotate")
+                    }
+                }
                 Divider()
                 Button(role: .destructive) { onClear() } label: { Label("Clear canvas", systemImage: "trash") }
                 if hasPhoto {
@@ -74,6 +81,6 @@ struct TopBar: View {
            canUndo: true, canRedo: false,
            onShare: {}, onClear: {}, onBackgroundColor: {},
            onToggleFingerDrawing: {}, fingerDrawingOn: false,
-           hasPhoto: true, photoHidden: false,
-           onTogglePhoto: {}, onRemovePhoto: {})
+           hasPhoto: true, canEditPhoto: true, photoHidden: false,
+           onTogglePhoto: {}, onEditPhoto: {}, onRemovePhoto: {})
 }

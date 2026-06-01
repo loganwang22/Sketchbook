@@ -1,5 +1,4 @@
 import Foundation
-import CoreGraphics
 
 struct PhotoLayer: Codable, Equatable {
     enum Mode: String, Codable, CaseIterable {
@@ -11,39 +10,38 @@ struct PhotoLayer: Codable, Equatable {
     var imageFilename: String
     var mode: Mode
     var opacity: Double
-    var transform: CGAffineTransform
+    // User adjustments from the "Edit picture" mode, in canvas content space so they
+    // track zoom/pan. Defaults place the photo filling the viewport where it was added.
+    var scale: Double
+    var rotation: Double   // radians
+    var offsetX: Double    // content-space points
+    var offsetY: Double
 
-    init(imageFilename: String, mode: Mode, opacity: Double = 1.0, transform: CGAffineTransform = .identity) {
+    init(imageFilename: String, mode: Mode, opacity: Double = 1.0,
+         scale: Double = 1, rotation: Double = 0, offsetX: Double = 0, offsetY: Double = 0) {
         self.imageFilename = imageFilename
         self.mode = mode
         self.opacity = opacity
-        self.transform = transform
+        self.scale = scale
+        self.rotation = rotation
+        self.offsetX = offsetX
+        self.offsetY = offsetY
     }
 
     private enum CodingKeys: String, CodingKey {
-        case imageFilename, mode, opacity
-        case transformMatrix
+        case imageFilename, mode, opacity, scale, rotation, offsetX, offsetY
     }
 
+    // Custom decode so drawings saved before these fields existed still load (missing
+    // keys fall back to identity placement). encode(to:) is synthesised from CodingKeys.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         imageFilename = try c.decode(String.self, forKey: .imageFilename)
         mode = try c.decode(Mode.self, forKey: .mode)
-        opacity = try c.decode(Double.self, forKey: .opacity)
-        let m = try c.decode([CGFloat].self, forKey: .transformMatrix)
-        guard m.count == 6 else {
-            throw DecodingError.dataCorruptedError(forKey: .transformMatrix, in: c,
-                debugDescription: "Expected 6 floats, got \(m.count)")
-        }
-        transform = CGAffineTransform(a: m[0], b: m[1], c: m[2], d: m[3], tx: m[4], ty: m[5])
-    }
-
-    func encode(to encoder: Encoder) throws {
-        var c = encoder.container(keyedBy: CodingKeys.self)
-        try c.encode(imageFilename, forKey: .imageFilename)
-        try c.encode(mode, forKey: .mode)
-        try c.encode(opacity, forKey: .opacity)
-        try c.encode([transform.a, transform.b, transform.c, transform.d, transform.tx, transform.ty],
-                     forKey: .transformMatrix)
+        opacity = try c.decodeIfPresent(Double.self, forKey: .opacity) ?? 1.0
+        scale = try c.decodeIfPresent(Double.self, forKey: .scale) ?? 1.0
+        rotation = try c.decodeIfPresent(Double.self, forKey: .rotation) ?? 0
+        offsetX = try c.decodeIfPresent(Double.self, forKey: .offsetX) ?? 0
+        offsetY = try c.decodeIfPresent(Double.self, forKey: .offsetY) ?? 0
     }
 }

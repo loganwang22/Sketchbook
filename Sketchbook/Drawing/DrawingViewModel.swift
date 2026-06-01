@@ -11,6 +11,8 @@ final class DrawingViewModel: ObservableObject {
     @Published var photoLayer: PhotoLayer? { didSet { markDirty() } }
     @Published var palette: [ColorRGBA] { didSet { markDirty() } }
     @Published var photoHidden = false   // transient view toggle, not part of the artwork
+    @Published var editingPhoto = false  // transient: picture move/scale/rotate mode
+    @Published var hudMessage: String?   // transient on-screen status (e.g. tool toggle)
     @Published var selectedBrush: BrushKind = .pen
     @Published var selectedSize: BrushSize = .medium
     @Published var selectedColor: ColorRGBA
@@ -27,6 +29,7 @@ final class DrawingViewModel: ObservableObject {
     private let debounce: TimeInterval
     /// Brush to restore when the pencil double-tap toggles back from the eraser.
     private var lastNonEraserBrush: BrushKind = .pen
+    private var hudTask: Task<Void, Never>?
     /// True only after a real edit. Gating saves on this keeps "open to view" from
     /// bumping a painting's position (ordering is by last edit, not last opened).
     private var isDirty = false
@@ -103,5 +106,27 @@ final class DrawingViewModel: ObservableObject {
             lastNonEraserBrush = selectedBrush
             selectedBrush = .eraser
         }
+        showHUD(selectedBrush == .eraser ? "Eraser" : selectedBrush.rawValue.capitalized)
+    }
+
+    /// Briefly shows a status message (auto-clears) so toggles are obvious.
+    func showHUD(_ message: String) {
+        hudMessage = message
+        hudTask?.cancel()
+        hudTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 1_100_000_000)
+            guard let self, !Task.isCancelled else { return }
+            self.hudMessage = nil
+        }
+    }
+
+    /// Live update from the picture-edit gestures (values in canvas content space).
+    func updatePhotoTransform(scale: Double, rotation: Double, offset: CGSize) {
+        guard var layer = photoLayer else { return }
+        layer.scale = min(max(scale, 0.2), 6)
+        layer.rotation = rotation
+        layer.offsetX = Double(offset.width)
+        layer.offsetY = Double(offset.height)
+        photoLayer = layer
     }
 }
