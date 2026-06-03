@@ -96,9 +96,10 @@ struct PencilCanvas: UIViewRepresentable {
         private var currentImage: UIImage?
         var isApplyingInitialDrawing = false
 
-        // Straight-line (Shift held) support.
+        // Straight-line support: Shift = horizontal/vertical, Control = any angle.
         var lastStrokeCount = 0
         private var shiftHeld = false
+        private var controlHeld = false
         private var isStraightening = false
         private var keyboardObserver: NSObjectProtocol?
 
@@ -110,13 +111,13 @@ struct PencilCanvas: UIViewRepresentable {
 
         func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
             guard !isApplyingInitialDrawing else { return }
-            // When Shift is held, snap a freshly-finished stroke to a horizontal or
-            // vertical line. The guard + count check prevents the replacement (which
-            // re-fires this delegate) from looping.
-            if shiftHeld, !isStraightening,
+            // Snap a freshly-finished stroke to a straight line when a modifier is held:
+            // Shift -> horizontal/vertical, Control -> any angle. The guard + count check
+            // prevents the replacement (which re-fires this delegate) from looping.
+            if (shiftHeld || controlHeld), !isStraightening,
                canvasView.drawing.strokes.count == lastStrokeCount + 1 {
                 isStraightening = true
-                straightenLastStroke(canvasView)
+                straightenLastStroke(canvasView, axisAligned: shiftHeld)
                 isStraightening = false
             }
             lastStrokeCount = canvasView.drawing.strokes.count
@@ -124,18 +125,24 @@ struct PencilCanvas: UIViewRepresentable {
             parent.onStrokeEnd()
         }
 
-        /// Replaces the last stroke with a clean axis-aligned line from its start to its
-        /// end, choosing horizontal or vertical by whichever delta is larger.
-        private func straightenLastStroke(_ canvas: PKCanvasView) {
+        /// Replaces the last stroke with a clean straight line from its start to its end.
+        /// `axisAligned` snaps to horizontal/vertical; otherwise the actual end is kept
+        /// for a free-angle line.
+        private func straightenLastStroke(_ canvas: PKCanvasView, axisAligned: Bool) {
             var strokes = canvas.drawing.strokes
             guard let last = strokes.last, last.path.count >= 2 else { return }
             let path = last.path
             let startPoint = path[0]
             let a = startPoint.location
             let b = path[path.count - 1].location
-            let end = abs(b.x - a.x) >= abs(b.y - a.y)
-                ? CGPoint(x: b.x, y: a.y)   // horizontal
-                : CGPoint(x: a.x, y: b.y)   // vertical
+            let end: CGPoint
+            if axisAligned {
+                end = abs(b.x - a.x) >= abs(b.y - a.y)
+                    ? CGPoint(x: b.x, y: a.y)   // horizontal
+                    : CGPoint(x: a.x, y: b.y)   // vertical
+            } else {
+                end = b                          // any angle
+            }
             let length = hypot(end.x - a.x, end.y - a.y)
             guard length > 1 else { return }
             let steps = max(2, Int(length / 4))
@@ -171,16 +178,23 @@ struct PencilCanvas: UIViewRepresentable {
             guard let input = keyboard?.keyboardInput else { return }
             let handler: GCControllerButtonValueChangedHandler = { [weak self, weak input] _, _, _ in
                 guard let self, let input else { return }
-                let held = (input.button(forKeyCode: .leftShift)?.isPressed ?? false)
-                        || (input.button(forKeyCode: .rightShift)?.isPressed ?? false)
+                let shift = (input.button(forKeyCode: .leftShift)?.isPressed ?? false)
+                         || (input.button(forKeyCode: .rightShift)?.isPressed ?? false)
+                let control = (input.button(forKeyCode: .leftControl)?.isPressed ?? false)
+                            || (input.button(forKeyCode: .rightControl)?.isPressed ?? false)
                 DispatchQueue.main.async {
-                    guard held != self.shiftHeld else { return }
-                    self.shiftHeld = held
-                    self.parent.onStraightLineActiveChanged(held)
+                    let wasActive = self.shiftHeld || self.controlHeld
+                    self.shiftHeld = shift
+                    self.controlHeld = control
+                    let isActive = shift || control
+                    if isActive != wasActive {
+                        self.parent.onStraightLineActiveChanged(isActive)
+                    }
                 }
             }
-            input.button(forKeyCode: .leftShift)?.pressedChangedHandler = handler
-            input.button(forKeyCode: .rightShift)?.pressedChangedHandler = handler
+            for code: GCKeyCode in [.leftShift, .rightShift, .leftControl, .rightControl] {
+                input.button(forKeyCode: code)?.pressedChangedHandler = handler
+            }
         }
 
         func scrollViewDidScroll(_ scrollView: UIScrollView) { syncPhoto() }
