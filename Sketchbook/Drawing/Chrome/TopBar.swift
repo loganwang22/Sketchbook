@@ -33,21 +33,21 @@ struct TopBar: View {
                 .accessibilityLabel("Redo")
             if hasPhoto {
                 chipButton(systemName: photoHidden ? "eye.slash" : "eye", action: onTogglePhoto)
-                    .accessibilityLabel(photoHidden ? "Show picture" : "Hide picture")
+                    .accessibilityLabel(photoHidden ? "Show pictures" : "Hide pictures")
             }
             Menu {
                 Button { onShare() } label: { Label("Share", systemImage: "square.and.arrow.up") }
                 Button { onBackgroundColor() } label: { Label("Background", systemImage: "rectangle.fill") }
                 if canEditPhoto {
                     Button { onEditPhoto() } label: {
-                        Label("Edit picture", systemImage: "crop.rotate")
+                        Label("Edit pictures", systemImage: "crop.rotate")
                     }
                 }
                 Divider()
                 Button(role: .destructive) { onClear() } label: { Label("Clear canvas", systemImage: "trash") }
                 if hasPhoto {
                     Button(role: .destructive) { onRemovePhoto() } label: {
-                        Label("Remove picture", systemImage: "photo.badge.minus")
+                        Label("Remove all pictures", systemImage: "photo.badge.minus")
                     }
                 }
                 Divider()

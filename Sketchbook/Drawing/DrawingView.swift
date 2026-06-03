@@ -11,7 +11,7 @@ struct DrawingView: View {
     @State private var showShareSheet = false
     @State private var showPhotoFlow = false
     @State private var shareImage: UIImage?
-    @State private var activePhotoImage: UIImage?
+    @State private var photoImages: [String: UIImage] = [:]
 
     // Picture-edit gesture state (captured at gesture start).
     @State private var editGestureActive = false
@@ -29,37 +29,45 @@ struct DrawingView: View {
         }
     }
 
-    private var photoMode: PhotoLayer.Mode? { viewModel.photoLayer?.mode }
-
-    /// Reference mode shows the photo in a side panel (unless hidden); every other
-    /// mode places the photo on the canvas itself.
+    private var canvasPhotoLayers: [PhotoLayer] {
+        viewModel.photoLayers.filter { $0.mode != .reference }
+    }
+    private var referenceImages: [(id: UUID, image: UIImage)] {
+        viewModel.photoLayers.compactMap { layer in
+            guard layer.mode == .reference, let img = photoImages[layer.imageFilename] else { return nil }
+            return (layer.id, img)
+        }
+    }
     private var showingReferencePanel: Bool {
-        photoMode == .reference && activePhotoImage != nil && !viewModel.photoHidden
+        !referenceImages.isEmpty && !viewModel.photosHidden
     }
-    private var artboardPhoto: UIImage? {
-        photoMode == .reference ? nil : activePhotoImage
+    private var artboardPhotos: [ArtboardPhoto] {
+        canvasPhotoLayers.compactMap { layer in
+            guard let img = photoImages[layer.imageFilename] else { return nil }
+            return ArtboardPhoto(id: layer.id, image: img, mode: layer.mode,
+                                 opacity: layer.opacity, scale: layer.scale,
+                                 rotation: layer.rotation,
+                                 offset: CGSize(width: layer.offsetX, height: layer.offsetY),
+                                 hidden: viewModel.photosHidden)
+        }
     }
-    /// Move/scale/rotate only applies to photos placed on the canvas.
-    private var canEditPhoto: Bool {
-        viewModel.photoLayer != nil && photoMode != .reference
+    private var photoFilenamesKey: String {
+        viewModel.photoLayers.map(\.imageFilename).joined(separator: ",")
     }
 
     var body: some View {
         ZStack {
-            // Drawing area — split only when a reference panel is showing.
-            if showingReferencePanel, let image = activePhotoImage {
+            if showingReferencePanel {
                 HStack(spacing: 0) {
                     artboard
                     Divider()
-                    ReferencePanel(image: image)
+                    ReferencePanel(images: referenceImages)
                         .frame(width: 360)
                 }
             } else {
                 artboard
             }
 
-            // Chrome sits on top at full width, so the back button and dock keep
-            // their normal positions regardless of the split.
             chrome
 
             if viewModel.editingPhoto {
@@ -71,21 +79,13 @@ struct DrawingView: View {
             }
 
             if viewModel.straightLineActive {
-                Label("Straight line", systemImage: "ruler")
-                    .font(.subheadline.weight(.semibold))
-                    .padding(.horizontal, 16).padding(.vertical, 8)
-                    .background(.ultraThinMaterial, in: Capsule())
-                    .overlay(Capsule().stroke(.primary.opacity(0.1)))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                    .padding(.top, 150)
-                    .transition(.opacity)
-                    .allowsHitTesting(false)
+                straightLineIndicator
             }
         }
         .animation(.easeInOut(duration: 0.2), value: viewModel.hudMessage)
         .animation(.easeInOut(duration: 0.2), value: viewModel.straightLineActive)
-        .task(id: viewModel.photoLayer?.imageFilename) {
-            activePhotoImage = loadActivePhoto()
+        .task(id: photoFilenamesKey) {
+            loadPhotoImages()
         }
         .sheet(item: $showParentGate) { action in
             ParentGateSheet(
@@ -100,7 +100,7 @@ struct DrawingView: View {
         .sheet(isPresented: $showPhotoFlow) {
             PhotoFlow(
                 drawingId: viewModel.drawing.id,
-                photoLayer: $viewModel.photoLayer,
+                onAdd: { viewModel.addPhotoLayer($0) },
                 onClose: { showPhotoFlow = false }
             )
         }
@@ -108,9 +108,6 @@ struct DrawingView: View {
             if let image = shareImage {
                 ShareSheet(items: [image])
             }
-        }
-        .onChange(of: viewModel.photoLayer?.imageFilename) { _, _ in
-            viewModel.photoHidden = false
         }
         .onDisappear { try? viewModel.flushSave() }
     }
@@ -123,14 +120,7 @@ struct DrawingView: View {
             PencilCanvas(drawingData: $viewModel.pkDrawingData,
                          tool: viewModel.currentTool,
                          allowFingerDrawing: fingerPref.allowFingerDrawing,
-                         photoImage: artboardPhoto,
-                         photoHidden: viewModel.photoHidden,
-                         photoMode: photoMode,
-                         photoOpacity: viewModel.photoLayer?.opacity ?? 1.0,
-                         photoScale: viewModel.photoLayer?.scale ?? 1,
-                         photoRotation: viewModel.photoLayer?.rotation ?? 0,
-                         photoOffset: CGSize(width: viewModel.photoLayer?.offsetX ?? 0,
-                                             height: viewModel.photoLayer?.offsetY ?? 0),
+                         photos: artboardPhotos,
                          onStrokeEnd: { viewModel.scheduleSave() },
                          onCanvasReady: { viewModel.canvasRef = $0 },
                          onPencilDoubleTap: { viewModel.togglePencilEraser() },
@@ -150,15 +140,12 @@ struct DrawingView: View {
                 onBackgroundColor: { showBackgroundPopover = true },
                 onToggleFingerDrawing: { fingerPref.allowFingerDrawing.toggle() },
                 fingerDrawingOn: fingerPref.allowFingerDrawing,
-                hasPhoto: viewModel.photoLayer != nil,
-                canEditPhoto: canEditPhoto,
-                photoHidden: viewModel.photoHidden,
-                onTogglePhoto: { viewModel.photoHidden.toggle() },
-                onEditPhoto: {
-                    viewModel.photoHidden = false
-                    viewModel.editingPhoto = true
-                },
-                onRemovePhoto: { viewModel.removePhoto() }
+                hasPhoto: !viewModel.photoLayers.isEmpty,
+                canEditPhoto: viewModel.hasCanvasPhoto,
+                photoHidden: viewModel.photosHidden,
+                onTogglePhoto: { viewModel.photosHidden.toggle() },
+                onEditPhoto: { viewModel.beginEditingPhotos() },
+                onRemovePhoto: { viewModel.removeAllPhotos() }
             )
             Spacer()
             ToolDock(brush: $viewModel.selectedBrush,
@@ -174,8 +161,6 @@ struct DrawingView: View {
 
     private var photoEditOverlay: some View {
         ZStack {
-            // Transparent surface that captures the transform gestures (so the pencil
-            // can't draw while adjusting the picture).
             Color.black.opacity(0.001)
                 .ignoresSafeArea()
                 .contentShape(Rectangle())
@@ -183,9 +168,20 @@ struct DrawingView: View {
 
             VStack {
                 HStack(spacing: 16) {
-                    Label("Move • pinch • twist the picture", systemImage: "hand.draw")
-                        .font(.headline)
+                    if canvasPhotoLayers.count > 1 {
+                        layerStrip
+                    } else {
+                        Label("Move • pinch • twist", systemImage: "hand.draw")
+                            .font(.headline)
+                    }
                     Spacer()
+                    Button(role: .destructive) {
+                        viewModel.removeActivePhoto()
+                        if !viewModel.hasCanvasPhoto { viewModel.editingPhoto = false }
+                    } label: {
+                        Label("Remove", systemImage: "trash")
+                    }
+                    .disabled(viewModel.activePhotoID == nil)
                     Button("Done") {
                         viewModel.editingPhoto = false
                         try? viewModel.flushSave()
@@ -201,6 +197,32 @@ struct DrawingView: View {
         }
     }
 
+    /// Thumbnails of the canvas pictures; tap one to choose which to move/scale/rotate.
+    private var layerStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                ForEach(canvasPhotoLayers) { layer in
+                    let isActive = (layer.id == viewModel.activePhotoID)
+                    Group {
+                        if let img = photoImages[layer.imageFilename] {
+                            Image(uiImage: img).resizable().scaledToFit()
+                        } else {
+                            Color(.systemGray5)
+                        }
+                    }
+                    .frame(width: 56, height: 42)
+                    .background(Color(.systemBackground))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .overlay(RoundedRectangle(cornerRadius: 8)
+                        .stroke(isActive ? Color.accentColor : .secondary.opacity(0.3),
+                                lineWidth: isActive ? 3 : 1))
+                    .onTapGesture { viewModel.activePhotoID = layer.id }
+                }
+            }
+        }
+        .frame(maxWidth: 360)
+    }
+
     private var photoEditGesture: some Gesture {
         let drag = DragGesture()
         let magnify = MagnifyGesture()
@@ -209,10 +231,10 @@ struct DrawingView: View {
             .onChanged { value in
                 if !editGestureActive {
                     editGestureActive = true
-                    editBaseScale = viewModel.photoLayer?.scale ?? 1
-                    editBaseRotation = viewModel.photoLayer?.rotation ?? 0
-                    editBaseOffset = CGSize(width: viewModel.photoLayer?.offsetX ?? 0,
-                                            height: viewModel.photoLayer?.offsetY ?? 0)
+                    editBaseScale = viewModel.activePhotoLayer?.scale ?? 1
+                    editBaseRotation = viewModel.activePhotoLayer?.rotation ?? 0
+                    editBaseOffset = CGSize(width: viewModel.activePhotoLayer?.offsetX ?? 0,
+                                            height: viewModel.activePhotoLayer?.offsetY ?? 0)
                 }
                 let zoom = viewModel.canvasRef?.zoomScale ?? 1
                 let magnification = value.first?.second?.magnification ?? 1
@@ -243,12 +265,24 @@ struct DrawingView: View {
             .allowsHitTesting(false)
     }
 
+    private var straightLineIndicator: some View {
+        Label("Straight line", systemImage: "ruler")
+            .font(.subheadline.weight(.semibold))
+            .padding(.horizontal, 16).padding(.vertical, 8)
+            .background(.ultraThinMaterial, in: Capsule())
+            .overlay(Capsule().stroke(.primary.opacity(0.1)))
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .padding(.top, 150)
+            .transition(.opacity)
+            .allowsHitTesting(false)
+    }
+
     private func handleGated(_ action: PendingGatedAction) {
         switch action {
         case .share:
             shareImage = ThumbnailRenderer.render(
                 drawing: viewModel.drawing,
-                photoImage: activePhotoImage,
+                photoImages: photoImages,
                 canvasSize: CGSize(width: 2048, height: 1536)
             )
             showShareSheet = true
@@ -257,22 +291,33 @@ struct DrawingView: View {
         }
     }
 
-    private func loadActivePhoto() -> UIImage? {
-        guard let layer = viewModel.photoLayer else { return nil }
-        return DrawingRepository().loadPhoto(for: viewModel.drawing.id, filename: layer.imageFilename)
+    private func loadPhotoImages() {
+        let repo = DrawingRepository()
+        var images: [String: UIImage] = [:]
+        for layer in viewModel.photoLayers {
+            images[layer.imageFilename] = repo.loadPhoto(for: viewModel.drawing.id,
+                                                         filename: layer.imageFilename)
+        }
+        photoImages = images
     }
 }
 
-/// Side panel shown in "Look at it" mode — the reference the child draws from.
+/// Side panel shown in "Look at it" mode — the reference(s) the child draws from.
 private struct ReferencePanel: View {
-    let image: UIImage
+    let images: [(id: UUID, image: UIImage)]
     var body: some View {
         ZStack {
             Color(.systemGray6).ignoresSafeArea()
-            Image(uiImage: image)
-                .resizable()
-                .scaledToFit()
+            ScrollView {
+                VStack(spacing: 16) {
+                    ForEach(images, id: \.id) { item in
+                        Image(uiImage: item.image)
+                            .resizable()
+                            .scaledToFit()
+                    }
+                }
                 .padding(20)
+            }
         }
     }
 }

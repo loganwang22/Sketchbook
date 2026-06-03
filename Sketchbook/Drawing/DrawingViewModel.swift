@@ -8,10 +8,11 @@ import PencilKit
 final class DrawingViewModel: ObservableObject {
     @Published var pkDrawingData: Data { didSet { markDirty() } }
     @Published var backgroundColor: ColorRGBA { didSet { markDirty() } }
-    @Published var photoLayer: PhotoLayer? { didSet { markDirty() } }
+    @Published var photoLayers: [PhotoLayer] { didSet { markDirty() } }
     @Published var palette: [ColorRGBA] { didSet { markDirty() } }
-    @Published var photoHidden = false   // transient view toggle, not part of the artwork
+    @Published var photosHidden = false  // transient view toggle, not part of the artwork
     @Published var editingPhoto = false  // transient: picture move/scale/rotate mode
+    @Published var activePhotoID: UUID?  // transient: which picture edit/remove targets
     @Published var hudMessage: String?   // transient on-screen status (e.g. tool toggle)
     @Published var straightLineActive = false  // Shift held: strokes snap to H/V lines
     @Published var selectedBrush: BrushKind = .pen
@@ -41,7 +42,7 @@ final class DrawingViewModel: ObservableObject {
         self.debounce = debounce
         self.pkDrawingData = drawing.pkDrawingData
         self.backgroundColor = drawing.backgroundColor
-        self.photoLayer = drawing.photoLayer
+        self.photoLayers = drawing.photoLayers
         let loadedPalette = drawing.palette ?? KidPalette.colors.map(\.color)
         self.palette = loadedPalette
         self.selectedColor = loadedPalette.last ?? KidPalette.colors[9].color
@@ -69,7 +70,7 @@ final class DrawingViewModel: ObservableObject {
         guard isDirty else { return }   // nothing changed — don't reorder or rewrite
         drawing.pkDrawingData = pkDrawingData
         drawing.backgroundColor = backgroundColor
-        drawing.photoLayer = photoLayer
+        drawing.photoLayers = photoLayers
         drawing.palette = palette
         drawing.touch()
         try store.save(drawing)
@@ -77,14 +78,15 @@ final class DrawingViewModel: ObservableObject {
         regenerateThumbnail()
     }
 
-    /// Renders the current drawing (background + photo + strokes) to a thumbnail PNG
+    /// Renders the current drawing (background + photos + strokes) to a thumbnail PNG
     /// so the gallery can show a real preview. Cheap at 400×300; runs on every save.
     private func regenerateThumbnail() {
         let repo = DrawingRepository()
-        let photo = drawing.photoLayer.flatMap {
-            repo.loadPhoto(for: drawing.id, filename: $0.imageFilename)
+        var images: [String: UIImage] = [:]
+        for layer in drawing.photoLayers {
+            images[layer.imageFilename] = repo.loadPhoto(for: drawing.id, filename: layer.imageFilename)
         }
-        guard let thumb = ThumbnailRenderer.render(drawing: drawing, photoImage: photo) else { return }
+        guard let thumb = ThumbnailRenderer.render(drawing: drawing, photoImages: images) else { return }
         try? repo.saveThumbnail(thumb, for: drawing.id)
     }
 
@@ -93,10 +95,40 @@ final class DrawingViewModel: ObservableObject {
         try flushSave()
     }
 
-    func removePhoto() {
-        photoLayer = nil
-        photoHidden = false
+    // MARK: photos
+
+    /// True when at least one picture sits on the canvas (trace/colour), i.e. editable.
+    var hasCanvasPhoto: Bool { photoLayers.contains { $0.mode != .reference } }
+
+    func addPhotoLayer(_ layer: PhotoLayer) {
+        photoLayers.append(layer)
+        activePhotoID = layer.id
+        photosHidden = false
         try? flushSave()
+    }
+
+    func removeActivePhoto() {
+        guard let id = activePhotoID else { return }
+        photoLayers.removeAll { $0.id == id }
+        activePhotoID = photoLayers.last { $0.mode != .reference }?.id
+        try? flushSave()
+    }
+
+    func removeAllPhotos() {
+        photoLayers = []
+        activePhotoID = nil
+        photosHidden = false
+        try? flushSave()
+    }
+
+    /// Ensures a canvas photo is selected, then enters move/scale/rotate mode.
+    func beginEditingPhotos() {
+        if activePhotoID == nil || !photoLayers.contains(where: { $0.id == activePhotoID && $0.mode != .reference }) {
+            activePhotoID = photoLayers.last { $0.mode != .reference }?.id
+        }
+        guard activePhotoID != nil else { return }
+        photosHidden = false
+        editingPhoto = true
     }
 
     /// Apple Pencil double-tap: flip to the eraser, or back to the last brush used.
@@ -121,13 +153,19 @@ final class DrawingViewModel: ObservableObject {
         }
     }
 
+    /// The picture currently targeted by edit gestures / remove.
+    var activePhotoLayer: PhotoLayer? {
+        guard let id = activePhotoID else { return nil }
+        return photoLayers.first { $0.id == id }
+    }
+
     /// Live update from the picture-edit gestures (values in canvas content space).
     func updatePhotoTransform(scale: Double, rotation: Double, offset: CGSize) {
-        guard var layer = photoLayer else { return }
-        layer.scale = min(max(scale, 0.2), 6)
-        layer.rotation = rotation
-        layer.offsetX = Double(offset.width)
-        layer.offsetY = Double(offset.height)
-        photoLayer = layer
+        guard let id = activePhotoID,
+              let index = photoLayers.firstIndex(where: { $0.id == id }) else { return }
+        photoLayers[index].scale = min(max(scale, 0.2), 6)
+        photoLayers[index].rotation = rotation
+        photoLayers[index].offsetX = Double(offset.width)
+        photoLayers[index].offsetY = Double(offset.height)
     }
 }

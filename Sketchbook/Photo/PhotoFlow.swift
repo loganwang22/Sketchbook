@@ -2,7 +2,7 @@ import SwiftUI
 
 struct PhotoFlow: View {
     let drawingId: UUID
-    @Binding var photoLayer: PhotoLayer?
+    let onAdd: (PhotoLayer) -> Void
     let onClose: () -> Void
 
     @State private var stage: Stage = .source
@@ -59,8 +59,8 @@ struct PhotoFlow: View {
         guard (try? repo.savePhoto(processed, for: drawingId, filename: filename)) != nil else {
             onClose(); return
         }
-        photoLayer = PhotoLayer(imageFilename: filename, mode: mode,
-                                opacity: mode == .trace ? 0.5 : 1.0)
+        onAdd(PhotoLayer(imageFilename: filename, mode: mode,
+                         opacity: mode == .trace ? 0.5 : 1.0))
         onClose()
     }
 }

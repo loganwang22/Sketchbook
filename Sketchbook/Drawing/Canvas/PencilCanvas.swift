@@ -2,20 +2,26 @@ import SwiftUI
 import PencilKit
 import GameController
 
-/// The drawing surface. A `PKCanvasView` (the scroller) plus an optional photo layer
-/// that lives *in canvas content space* — it pans and zooms with the strokes, so a
-/// traced or coloured photo stays aligned no matter how the child zooms.
+/// One photo placed on the canvas. Identified by `id` so its image view persists across
+/// updates; positioned in canvas content space so it tracks zoom/pan with the strokes.
+struct ArtboardPhoto {
+    let id: UUID
+    let image: UIImage
+    let mode: PhotoLayer.Mode   // .trace (below strokes) or .coloringPage (above)
+    let opacity: Double
+    let scale: Double
+    let rotation: Double
+    let offset: CGSize
+    let hidden: Bool
+}
+
+/// The drawing surface. A `PKCanvasView` (the scroller) plus any number of photo layers
+/// that live *in canvas content space* so they pan and zoom with the strokes.
 struct PencilCanvas: UIViewRepresentable {
     @Binding var drawingData: Data
     let tool: PKTool
     let allowFingerDrawing: Bool
-    var photoImage: UIImage? = nil
-    var photoHidden: Bool = false
-    var photoMode: PhotoLayer.Mode? = nil
-    var photoOpacity: Double = 1.0
-    var photoScale: Double = 1
-    var photoRotation: Double = 0
-    var photoOffset: CGSize = .zero
+    var photos: [ArtboardPhoto] = []
     let onStrokeEnd: () -> Void
     let onCanvasReady: (PKCanvasView) -> Void
     var onPencilDoubleTap: () -> Void = {}
@@ -43,11 +49,6 @@ struct PencilCanvas: UIViewRepresentable {
         }
         DispatchQueue.main.async { context.coordinator.isApplyingInitialDrawing = false }
 
-        let photoView = UIImageView()
-        photoView.contentMode = .scaleAspectFit
-        photoView.isUserInteractionEnabled = false
-
-        container.addSubview(photoView)
         container.addSubview(canvas)
         canvas.frame = container.bounds
         canvas.autoresizingMask = [.flexibleWidth, .flexibleHeight]
@@ -58,13 +59,12 @@ struct PencilCanvas: UIViewRepresentable {
 
         let coord = context.coordinator
         coord.canvas = canvas
-        coord.photoView = photoView
         coord.container = container
-        container.onLayout = { [weak coord] in coord?.syncPhoto() }
+        container.onLayout = { [weak coord] in coord?.syncPhotos() }
 
         coord.lastStrokeCount = canvas.drawing.strokes.count
         coord.startObservingKeyboard()
-        coord.applyPhoto(image: photoImage, hidden: photoHidden, mode: photoMode, opacity: photoOpacity)
+        coord.applyPhotos(photos)
         onCanvasReady(canvas)
         return container
     }
@@ -78,7 +78,7 @@ struct PencilCanvas: UIViewRepresentable {
         if drawingData.isEmpty && !canvas.drawing.strokes.isEmpty {
             canvas.drawing = PKDrawing()
         }
-        coord.applyPhoto(image: photoImage, hidden: photoHidden, mode: photoMode, opacity: photoOpacity)
+        coord.applyPhotos(photos)
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
@@ -86,14 +86,12 @@ struct PencilCanvas: UIViewRepresentable {
     final class Coordinator: NSObject, PKCanvasViewDelegate, UIPencilInteractionDelegate {
         var parent: PencilCanvas
         weak var canvas: PKCanvasView?
-        weak var photoView: UIImageView?
         weak var container: ArtboardContainer?
 
-        /// The photo's rectangle in canvas *content* coordinates, captured when the
-        /// photo is first placed (it fills the viewport at that moment). syncPhoto then
-        /// maps it through the live zoom + offset so it tracks the strokes.
-        private var photoContentRect: CGRect = .zero
-        private var currentImage: UIImage?
+        // One image view + captured content rect per photo id.
+        private var photoViews: [UUID: UIImageView] = [:]
+        private var photoRects: [UUID: CGRect] = [:]
+        private var photoParams: [UUID: ArtboardPhoto] = [:]
         var isApplyingInitialDrawing = false
 
         // Straight-line support: Shift = horizontal/vertical, Control = any angle.
@@ -111,9 +109,6 @@ struct PencilCanvas: UIViewRepresentable {
 
         func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
             guard !isApplyingInitialDrawing else { return }
-            // Snap a freshly-finished stroke to a straight line when a modifier is held:
-            // Shift -> horizontal/vertical, Control -> any angle. The guard + count check
-            // prevents the replacement (which re-fires this delegate) from looping.
             if (shiftHeld || controlHeld), !isStraightening,
                canvasView.drawing.strokes.count == lastStrokeCount + 1 {
                 isStraightening = true
@@ -124,6 +119,88 @@ struct PencilCanvas: UIViewRepresentable {
             parent.drawingData = canvasView.drawing.dataRepresentation()
             parent.onStrokeEnd()
         }
+
+        func scrollViewDidScroll(_ scrollView: UIScrollView) { syncPhotos() }
+        func scrollViewDidZoom(_ scrollView: UIScrollView) { syncPhotos() }
+
+        func pencilInteractionDidTap(_ interaction: UIPencilInteraction) {
+            parent.onPencilDoubleTap()
+        }
+
+        // MARK: photo layers
+
+        func applyPhotos(_ photos: [ArtboardPhoto]) {
+            guard let container, let canvas else { return }
+            let ids = Set(photos.map(\.id))
+
+            // Drop views for layers that no longer exist.
+            for (id, view) in photoViews where !ids.contains(id) {
+                view.removeFromSuperview()
+                photoViews[id] = nil
+                photoRects[id] = nil
+                photoParams[id] = nil
+            }
+
+            // Create or update a view per layer.
+            for photo in photos {
+                let view: UIImageView
+                if let existing = photoViews[photo.id] {
+                    view = existing
+                } else {
+                    view = UIImageView()
+                    view.contentMode = .scaleAspectFit
+                    view.isUserInteractionEnabled = false
+                    photoViews[photo.id] = view
+                    container.addSubview(view)
+                    capturePhotoRect(for: photo.id)   // land filling the current viewport
+                }
+                view.image = photo.image
+                view.alpha = CGFloat(photo.opacity)
+                view.isHidden = photo.hidden
+                photoParams[photo.id] = photo
+            }
+
+            // Z-order, bottom to top: trace layers, then the canvas, then colour layers.
+            var ordered: [UIView] = []
+            ordered += photos.filter { $0.mode == .trace }.compactMap { photoViews[$0.id] }
+            ordered.append(canvas)
+            ordered += photos.filter { $0.mode == .coloringPage }.compactMap { photoViews[$0.id] }
+            for (index, view) in ordered.enumerated() {
+                container.insertSubview(view, at: index)
+            }
+
+            syncPhotos()
+        }
+
+        /// Records the currently-visible content rect so a new photo "lands" filling the
+        /// screen wherever the child happens to be on the big canvas.
+        private func capturePhotoRect(for id: UUID) {
+            guard let canvas else { return }
+            let z = max(canvas.zoomScale, 0.0001)
+            let off = canvas.contentOffset
+            let size = canvas.bounds.size
+            guard size.width > 0 else { return }
+            photoRects[id] = CGRect(x: off.x / z, y: off.y / z,
+                                    width: size.width / z, height: size.height / z)
+        }
+
+        func syncPhotos() {
+            guard let canvas else { return }
+            let z = canvas.zoomScale
+            let off = canvas.contentOffset
+            for (id, view) in photoViews {
+                if photoRects[id] == nil { capturePhotoRect(for: id) }
+                guard let rect = photoRects[id], let p = photoParams[id], rect != .zero else { continue }
+                view.bounds = CGRect(origin: .zero, size: rect.size)
+                let cx = rect.midX + p.offset.width
+                let cy = rect.midY + p.offset.height
+                view.center = CGPoint(x: cx * z - off.x, y: cy * z - off.y)
+                view.transform = CGAffineTransform(rotationAngle: p.rotation)
+                    .scaledBy(x: p.scale * z, y: p.scale * z)
+            }
+        }
+
+        // MARK: straight lines
 
         /// Replaces the last stroke with a clean straight line from its start to its end.
         /// `axisAligned` snaps to horizontal/vertical; otherwise the actual end is kept
@@ -163,7 +240,7 @@ struct PencilCanvas: UIViewRepresentable {
             canvas.drawing = PKDrawing(strokes: strokes)
         }
 
-        // MARK: hardware keyboard (Shift) tracking
+        // MARK: hardware keyboard (Shift / Control) tracking
 
         func startObservingKeyboard() {
             attachKeyboard(GCKeyboard.coalesced)
@@ -196,63 +273,10 @@ struct PencilCanvas: UIViewRepresentable {
                 input.button(forKeyCode: code)?.pressedChangedHandler = handler
             }
         }
-
-        func scrollViewDidScroll(_ scrollView: UIScrollView) { syncPhoto() }
-        func scrollViewDidZoom(_ scrollView: UIScrollView) { syncPhoto() }
-
-        func pencilInteractionDidTap(_ interaction: UIPencilInteraction) {
-            parent.onPencilDoubleTap()
-        }
-
-        func applyPhoto(image: UIImage?, hidden: Bool, mode: PhotoLayer.Mode?, opacity: Double) {
-            guard let photoView, let container else { return }
-            if image !== currentImage {
-                currentImage = image
-                photoView.image = image
-                if image != nil { capturePhotoRect() }
-            }
-            photoView.isHidden = (image == nil) || hidden
-            photoView.alpha = CGFloat(opacity)
-            // Colour: bold contour on top of the strokes. Trace: faint contour behind
-            // them. The contour is transparent except for the lines, so the paper shows.
-            if mode == .coloringPage {
-                container.bringSubviewToFront(photoView)
-            } else {
-                container.sendSubviewToBack(photoView)
-            }
-            syncPhoto()
-        }
-
-        /// Records the currently-visible content rect so the photo "lands" filling the
-        /// screen wherever the child happens to be on the big canvas.
-        private func capturePhotoRect() {
-            guard let canvas else { return }
-            let z = max(canvas.zoomScale, 0.0001)
-            let off = canvas.contentOffset
-            let size = canvas.bounds.size
-            guard size.width > 0 else { return }
-            photoContentRect = CGRect(x: off.x / z, y: off.y / z,
-                                      width: size.width / z, height: size.height / z)
-        }
-
-        func syncPhoto() {
-            guard let canvas, let photoView, photoContentRect != .zero else { return }
-            let z = canvas.zoomScale
-            let off = canvas.contentOffset
-            // Map the photo's content rect (plus the user's edit offset) to the screen,
-            // then apply scale + rotation about its centre. Everything is multiplied by
-            // the zoom so the photo stays locked to the strokes.
-            photoView.bounds = CGRect(origin: .zero, size: photoContentRect.size)
-            let cx = photoContentRect.midX + parent.photoOffset.width
-            let cy = photoContentRect.midY + parent.photoOffset.height
-            photoView.center = CGPoint(x: cx * z - off.x, y: cy * z - off.y)
-            photoView.transform = CGAffineTransform(rotationAngle: parent.photoRotation)
-                .scaledBy(x: parent.photoScale * z, y: parent.photoScale * z)
-        }
     }
 }
 
-/// Plain container that reports layout passes so the photo layer can be repositioned.
+/// Plain container that reports layout passes so the photo layers can be repositioned.
 final class ArtboardContainer: UIView {
     var onLayout: (() -> Void)?
     override func layoutSubviews() {

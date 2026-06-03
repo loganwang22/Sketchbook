@@ -5,24 +5,24 @@ enum ThumbnailRenderer {
     static let defaultSize = CGSize(width: 400, height: 300)
 
     /// Composites a drawing into a flat image. Layer order mirrors the live canvas:
-    /// - trace: faint contour *below* the strokes
-    /// - colour: bold contour *on top*
+    /// - trace: faint contour(s) *below* the strokes
+    /// - colour: bold contour(s) *on top*
     /// Both contours are transparent except for the lines, so the paper colour shows.
     /// Reference photos are a side aid, not part of the artwork, so they're omitted.
+    /// `photoImages` is keyed by `PhotoLayer.imageFilename`.
     static func render(drawing: Drawing,
-                       photoImage: UIImage?,
+                       photoImages: [String: UIImage],
                        canvasSize: CGSize = defaultSize) -> UIImage? {
         let renderer = UIGraphicsImageRenderer(size: canvasSize)
         let bounds = CGRect(origin: .zero, size: canvasSize)
-        let mode = drawing.photoLayer?.mode
         return renderer.image { ctx in
             drawing.backgroundColor.uiColor.setFill()
             ctx.fill(bounds)
 
-            if mode == .trace, let photo = photoImage {
+            for layer in drawing.photoLayers where layer.mode == .trace {
+                guard let photo = photoImages[layer.imageFilename] else { continue }
                 photo.draw(in: aspectFit(photo.size, into: bounds),
-                           blendMode: .normal,
-                           alpha: CGFloat(drawing.photoLayer?.opacity ?? 0.5))
+                           blendMode: .normal, alpha: CGFloat(layer.opacity))
             }
 
             if !drawing.pkDrawingData.isEmpty,
@@ -31,10 +31,10 @@ enum ThumbnailRenderer {
                 strokes.draw(in: aspectFit(strokes.size, into: bounds))
             }
 
-            if mode == .coloringPage, let photo = photoImage {
+            for layer in drawing.photoLayers where layer.mode == .coloringPage {
+                guard let photo = photoImages[layer.imageFilename] else { continue }
                 photo.draw(in: aspectFit(photo.size, into: bounds),
-                           blendMode: .normal,
-                           alpha: 1.0)
+                           blendMode: .normal, alpha: 1.0)
             }
         }
     }

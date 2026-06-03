@@ -39,12 +39,13 @@ final class GalleryViewModel: ObservableObject {
     /// Renders the drawing at print resolution and stages it for the share sheet.
     func share(_ drawing: Drawing) {
         let repo = DrawingRepository()
-        let photo = drawing.photoLayer.flatMap {
-            repo.loadPhoto(for: drawing.id, filename: $0.imageFilename)
+        var images: [String: UIImage] = [:]
+        for layer in drawing.photoLayers {
+            images[layer.imageFilename] = repo.loadPhoto(for: drawing.id, filename: layer.imageFilename)
         }
         guard let image = ThumbnailRenderer.render(
             drawing: drawing,
-            photoImage: photo,
+            photoImages: images,
             canvasSize: CGSize(width: 2048, height: 1536)
         ) else { return }
         shareItem = ShareItem(image: image)
