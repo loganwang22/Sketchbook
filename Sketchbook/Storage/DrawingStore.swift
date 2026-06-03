@@ -11,14 +11,6 @@ final class DrawingStore: ObservableObject {
         self.drawings = (try? repository.listAll()) ?? []
     }
 
-    @discardableResult
-    func createNew() throws -> Drawing {
-        let d = Drawing.empty()
-        try repository.save(d)
-        drawings.insert(d, at: 0)
-        return d
-    }
-
     func save(_ drawing: Drawing) throws {
         try repository.save(drawing)
         if let idx = drawings.firstIndex(where: { $0.id == drawing.id }) {

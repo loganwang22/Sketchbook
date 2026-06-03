@@ -17,9 +17,11 @@ final class GalleryViewModel: ObservableObject {
 
     init(store: DrawingStore) { self.store = store }
 
-    @discardableResult
-    func createNew() throws -> Drawing {
-        try store.createNew()
+    /// Returns a fresh in-memory drawing. It is NOT written to disk or added to the
+    /// gallery until the first real edit saves it — so opening a new page and leaving
+    /// without drawing anything doesn't leave behind an empty painting.
+    func createNew() -> Drawing {
+        Drawing.empty()
     }
 
     // MARK: delete (parent-gated)

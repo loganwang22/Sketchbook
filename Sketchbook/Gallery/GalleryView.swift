@@ -68,7 +68,6 @@ struct GalleryView: View {
     }
 
     private func startNew() {
-        guard let d = try? viewModel.createNew() else { return }
-        openedDrawing = d
+        openedDrawing = viewModel.createNew()
     }
 }
