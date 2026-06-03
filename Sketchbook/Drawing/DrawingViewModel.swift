@@ -48,6 +48,9 @@ final class DrawingViewModel: ObservableObject {
         self.selectedColor = loadedPalette.last ?? KidPalette.colors[9].color
     }
 
+    /// Chinese writing pages show the 米字格 grid and lock the tool to the pen.
+    var isChineseWriting: Bool { drawing.kind == .chineseWriting }
+
     var currentTool: PKTool {
         selectedBrush.pkTool(color: selectedColor.uiColor, size: selectedSize)
     }

@@ -19,7 +19,16 @@ struct GalleryView: View {
         NavigationStack {
             ScrollView {
                 LazyVGrid(columns: columns, spacing: 28) {
-                    NewDrawingTile { startNew() }
+                    Menu {
+                        Button { openedDrawing = viewModel.createNew(kind: .freeform) } label: {
+                            Label("Drawing", systemImage: "scribble.variable")
+                        }
+                        Button { openedDrawing = viewModel.createNew(kind: .chineseWriting) } label: {
+                            Label("Chinese writing 中", systemImage: "character")
+                        }
+                    } label: {
+                        NewDrawingTile()
+                    }
                     ForEach(viewModel.store.drawings) { drawing in
                         ThumbnailCell(
                             image: DrawingRepository().loadThumbnail(for: drawing.id),
@@ -65,9 +74,5 @@ struct GalleryView: View {
                 if !newValue { viewModel.cancelDelete() }
             }
         )
-    }
-
-    private func startNew() {
-        openedDrawing = viewModel.createNew()
     }
 }

@@ -22,6 +22,7 @@ struct PencilCanvas: UIViewRepresentable {
     let tool: PKTool
     let allowFingerDrawing: Bool
     var photos: [ArtboardPhoto] = []
+    var showGrid: Bool = false
     let onStrokeEnd: () -> Void
     let onCanvasReady: (PKCanvasView) -> Void
     var onPencilDoubleTap: () -> Void = {}
@@ -92,6 +93,7 @@ struct PencilCanvas: UIViewRepresentable {
         private var photoViews: [UUID: UIImageView] = [:]
         private var photoRects: [UUID: CGRect] = [:]
         private var photoParams: [UUID: ArtboardPhoto] = [:]
+        private weak var gridView: MiziGridView?
         var isApplyingInitialDrawing = false
 
         // Straight-line support: Shift = horizontal/vertical, Control = any angle.
@@ -131,6 +133,22 @@ struct PencilCanvas: UIViewRepresentable {
 
         func applyPhotos(_ photos: [ArtboardPhoto]) {
             guard let container, let canvas else { return }
+
+            // 米字格 practice grid (Chinese writing mode), sits behind everything.
+            if parent.showGrid, gridView == nil {
+                let grid = MiziGridView()
+                grid.isUserInteractionEnabled = false
+                grid.backgroundColor = .clear
+                grid.contentMode = .redraw
+                grid.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+                grid.frame = container.bounds
+                gridView = grid
+                container.addSubview(grid)
+            } else if !parent.showGrid {
+                gridView?.removeFromSuperview()
+                gridView = nil
+            }
+
             let ids = Set(photos.map(\.id))
 
             // Drop views for layers that no longer exist.
@@ -160,8 +178,9 @@ struct PencilCanvas: UIViewRepresentable {
                 photoParams[photo.id] = photo
             }
 
-            // Z-order, bottom to top: trace layers, then the canvas, then colour layers.
+            // Z-order, bottom to top: grid, trace layers, the canvas, colour layers.
             var ordered: [UIView] = []
+            if let gridView { ordered.append(gridView) }
             ordered += photos.filter { $0.mode == .trace }.compactMap { photoViews[$0.id] }
             ordered.append(canvas)
             ordered += photos.filter { $0.mode == .coloringPage }.compactMap { photoViews[$0.id] }
@@ -188,6 +207,10 @@ struct PencilCanvas: UIViewRepresentable {
             guard let canvas else { return }
             let z = canvas.zoomScale
             let off = canvas.contentOffset
+            if let gridView, let container {
+                gridView.frame = container.bounds
+                gridView.update(zoom: z, offset: off)
+            }
             for (id, view) in photoViews {
                 if photoRects[id] == nil { capturePhotoRect(for: id) }
                 guard let rect = photoRects[id], let p = photoParams[id], rect != .zero else { continue }
@@ -282,5 +305,60 @@ final class ArtboardContainer: UIView {
     override func layoutSubviews() {
         super.layoutSubviews()
         onLayout?()
+    }
+}
+
+/// Draws an "infinite" 米字格 (rice-grid) practice grid, aligned to canvas content space
+/// so the cells stay put under the writing as the child zooms/pans. Solid red cell
+/// borders with dashed centre cross + diagonals, the traditional handwriting guide.
+final class MiziGridView: UIView {
+    private var zoom: CGFloat = 1
+    private var offset: CGPoint = .zero
+    private let baseCell: CGFloat = 230   // content-space points per character cell
+
+    func update(zoom: CGFloat, offset: CGPoint) {
+        self.zoom = zoom
+        self.offset = offset
+        setNeedsDisplay()
+    }
+
+    override func draw(_ rect: CGRect) {
+        guard let ctx = UIGraphicsGetCurrentContext() else { return }
+        let cell = baseCell * zoom
+        guard cell > 8 else { return }
+
+        let kx0 = Int(floor(offset.x / cell)), kx1 = Int(ceil((offset.x + bounds.width) / cell))
+        let ky0 = Int(floor(offset.y / cell)), ky1 = Int(ceil((offset.y + bounds.height) / cell))
+        guard kx1 >= kx0, ky1 >= ky0 else { return }
+
+        // Solid cell borders.
+        ctx.setStrokeColor(UIColor.systemRed.withAlphaComponent(0.45).cgColor)
+        ctx.setLineWidth(1)
+        ctx.setLineDash(phase: 0, lengths: [])
+        for k in kx0...kx1 {
+            let x = CGFloat(k) * cell - offset.x
+            ctx.move(to: CGPoint(x: x, y: 0)); ctx.addLine(to: CGPoint(x: x, y: bounds.height))
+        }
+        for k in ky0...ky1 {
+            let y = CGFloat(k) * cell - offset.y
+            ctx.move(to: CGPoint(x: 0, y: y)); ctx.addLine(to: CGPoint(x: bounds.width, y: y))
+        }
+        ctx.strokePath()
+
+        // Dashed centre cross + diagonals inside each cell.
+        ctx.setStrokeColor(UIColor.systemRed.withAlphaComponent(0.3).cgColor)
+        ctx.setLineDash(phase: 0, lengths: [5, 4])
+        for kx in kx0..<max(kx1, kx0 + 1) {
+            for ky in ky0..<max(ky1, ky0 + 1) {
+                let x0 = CGFloat(kx) * cell - offset.x
+                let y0 = CGFloat(ky) * cell - offset.y
+                let mx = x0 + cell / 2, my = y0 + cell / 2
+                ctx.move(to: CGPoint(x: mx, y: y0)); ctx.addLine(to: CGPoint(x: mx, y: y0 + cell))
+                ctx.move(to: CGPoint(x: x0, y: my)); ctx.addLine(to: CGPoint(x: x0 + cell, y: my))
+                ctx.move(to: CGPoint(x: x0, y: y0)); ctx.addLine(to: CGPoint(x: x0 + cell, y: y0 + cell))
+                ctx.move(to: CGPoint(x: x0 + cell, y: y0)); ctx.addLine(to: CGPoint(x: x0, y: y0 + cell))
+            }
+        }
+        ctx.strokePath()
     }
 }

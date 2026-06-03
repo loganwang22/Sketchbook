@@ -121,6 +121,7 @@ struct DrawingView: View {
                          tool: viewModel.currentTool,
                          allowFingerDrawing: fingerPref.allowFingerDrawing,
                          photos: artboardPhotos,
+                         showGrid: viewModel.isChineseWriting,
                          onStrokeEnd: { viewModel.scheduleSave() },
                          onCanvasReady: { viewModel.canvasRef = $0 },
                          onPencilDoubleTap: { viewModel.togglePencilEraser() },
@@ -152,7 +153,8 @@ struct DrawingView: View {
                      size: $viewModel.selectedSize,
                      color: $viewModel.selectedColor,
                      palette: $viewModel.palette,
-                     onPhotoTap: { showPhotoFlow = true })
+                     onPhotoTap: { showPhotoFlow = true },
+                     colorsOnly: viewModel.isChineseWriting)
             .padding(.bottom, 12)
         }
     }

@@ -24,25 +24,22 @@ struct ThumbnailCell: View {
     }
 }
 
+/// The dashed "new page" tile. Used as the label of a menu (Drawing / Chinese writing).
 struct NewDrawingTile: View {
-    let onTap: () -> Void
     var body: some View {
-        Button(action: onTap) {
-            RoundedRectangle(cornerRadius: 18)
-                .fill(.tint.opacity(0.1))
-                .overlay(
-                    Image(systemName: "plus")
-                        .font(.system(size: 60, weight: .light))
-                        .foregroundStyle(.tint)
-                )
-                .frame(width: 220, height: 165)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 18)
-                        .strokeBorder(.tint.opacity(0.5),
-                                      style: StrokeStyle(lineWidth: 2, dash: [8, 6]))
-                )
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("New drawing")
+        RoundedRectangle(cornerRadius: 18)
+            .fill(.tint.opacity(0.1))
+            .overlay(
+                Image(systemName: "plus")
+                    .font(.system(size: 60, weight: .light))
+                    .foregroundStyle(.tint)
+            )
+            .frame(width: 220, height: 165)
+            .overlay(
+                RoundedRectangle(cornerRadius: 18)
+                    .strokeBorder(.tint.opacity(0.5),
+                                  style: StrokeStyle(lineWidth: 2, dash: [8, 6]))
+            )
+            .accessibilityLabel("New page")
     }
 }
