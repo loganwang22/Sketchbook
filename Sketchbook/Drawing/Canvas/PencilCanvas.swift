@@ -23,6 +23,7 @@ struct PencilCanvas: UIViewRepresentable {
     let allowFingerDrawing: Bool
     var photos: [ArtboardPhoto] = []
     var showGrid: Bool = false
+    var initialZoom: CGFloat? = nil
     let onStrokeEnd: () -> Void
     let onCanvasReady: (PKCanvasView) -> Void
     var onPencilDoubleTap: () -> Void = {}
@@ -61,7 +62,7 @@ struct PencilCanvas: UIViewRepresentable {
         let coord = context.coordinator
         coord.canvas = canvas
         coord.container = container
-        container.onLayout = { [weak coord] in coord?.syncPhotos() }
+        container.onLayout = { [weak coord] in coord?.onContainerLayout() }
 
         coord.lastStrokeCount = canvas.drawing.strokes.count
         coord.startObservingKeyboard()
@@ -94,6 +95,7 @@ struct PencilCanvas: UIViewRepresentable {
         private var photoRects: [UUID: CGRect] = [:]
         private var photoParams: [UUID: ArtboardPhoto] = [:]
         private weak var gridView: MiziGridView?
+        private var didApplyInitialZoom = false
         var isApplyingInitialDrawing = false
 
         // Straight-line support: Shift = horizontal/vertical, Control = any angle.
@@ -124,6 +126,20 @@ struct PencilCanvas: UIViewRepresentable {
 
         func scrollViewDidScroll(_ scrollView: UIScrollView) { syncPhotos() }
         func scrollViewDidZoom(_ scrollView: UIScrollView) { syncPhotos() }
+
+        func onContainerLayout() {
+            applyInitialZoomIfNeeded()
+            syncPhotos()
+        }
+
+        /// Chinese writing opens slightly zoomed out (a comfortable writing zoom).
+        private func applyInitialZoomIfNeeded() {
+            guard !didApplyInitialZoom, let zoom = parent.initialZoom,
+                  let canvas, canvas.bounds.width > 0 else { return }
+            canvas.setZoomScale(zoom, animated: false)
+            canvas.setContentOffset(.zero, animated: false)
+            didApplyInitialZoom = true
+        }
 
         func pencilInteractionDidTap(_ interaction: UIPencilInteraction) {
             parent.onPencilDoubleTap()
@@ -308,13 +324,19 @@ final class ArtboardContainer: UIView {
     }
 }
 
+/// Shared 米字格 geometry so the live canvas and the gallery thumbnail use the same
+/// cell size (and therefore line up).
+enum MiziGrid {
+    static let cellSize: CGFloat = 230   // content-space points per character cell
+}
+
 /// Draws an "infinite" 米字格 (rice-grid) practice grid, aligned to canvas content space
 /// so the cells stay put under the writing as the child zooms/pans. Solid red cell
 /// borders with dashed centre cross + diagonals, the traditional handwriting guide.
 final class MiziGridView: UIView {
     private var zoom: CGFloat = 1
     private var offset: CGPoint = .zero
-    private let baseCell: CGFloat = 230   // content-space points per character cell
+    private let baseCell = MiziGrid.cellSize
 
     func update(zoom: CGFloat, offset: CGPoint) {
         self.zoom = zoom
