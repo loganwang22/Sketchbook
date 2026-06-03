@@ -126,7 +126,16 @@ struct DrawingView: View {
                          onCanvasReady: { viewModel.canvasRef = $0 },
                          onPencilDoubleTap: { viewModel.togglePencilEraser() },
                          onStraightLineActiveChanged: { viewModel.straightLineActive = $0 })
+                // In writing mode, inset the page so the grid clears the top bar and
+                // bottom dock and has a comfortable margin from the screen edges.
+                .padding(.top, viewModel.isChineseWriting ? gridInset.top : 0)
+                .padding(.bottom, viewModel.isChineseWriting ? gridInset.bottom : 0)
+                .padding(.horizontal, viewModel.isChineseWriting ? gridInset.side : 0)
         }
+    }
+
+    private var gridInset: (top: CGFloat, bottom: CGFloat, side: CGFloat) {
+        (top: 88, bottom: 92, side: 40)
     }
 
     private var chrome: some View {
