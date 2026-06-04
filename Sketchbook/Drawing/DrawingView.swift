@@ -125,7 +125,7 @@ struct DrawingView: View {
                          initialZoom: viewModel.isChineseWriting ? 0.65 : nil,
                          onStrokeEnd: { viewModel.scheduleSave() },
                          onCanvasReady: { viewModel.canvasRef = $0 },
-                         onPencilDoubleTap: { viewModel.togglePencilEraser() },
+                         onPencilTap: { viewModel.togglePencilEraser() },
                          onStraightLineActiveChanged: { viewModel.straightLineActive = $0 })
                 // In writing mode, inset the page so the grid clears the top bar and
                 // bottom dock and has a comfortable margin from the screen edges.

@@ -29,7 +29,7 @@ final class DrawingViewModel: ObservableObject {
     private let store: DrawingStore
     private var saveTask: Task<Void, Never>?
     private let debounce: TimeInterval
-    /// Brush to restore when the pencil double-tap toggles back from the eraser.
+    /// Brush to restore when the pencil barrel gesture toggles back from the eraser.
     private var lastNonEraserBrush: BrushKind = .pen
     private var hudTask: Task<Void, Never>?
     /// True only after a real edit. Gating saves on this keeps "open to view" from
@@ -134,7 +134,8 @@ final class DrawingViewModel: ObservableObject {
         editingPhoto = true
     }
 
-    /// Apple Pencil double-tap: flip to the eraser, or back to the last brush used.
+    /// Apple Pencil barrel gesture (double-tap / squeeze): flip to the eraser, or back
+    /// to the last brush used. Works in both drawing and Chinese-writing mode.
     func togglePencilEraser() {
         if selectedBrush == .eraser {
             selectedBrush = lastNonEraserBrush

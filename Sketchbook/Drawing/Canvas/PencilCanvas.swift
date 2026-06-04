@@ -26,7 +26,7 @@ struct PencilCanvas: UIViewRepresentable {
     var initialZoom: CGFloat? = nil
     let onStrokeEnd: () -> Void
     let onCanvasReady: (PKCanvasView) -> Void
-    var onPencilDoubleTap: () -> Void = {}
+    var onPencilTap: () -> Void = {}
     var onStraightLineActiveChanged: (Bool) -> Void = { _ in }
 
     func makeUIView(context: Context) -> ArtboardContainer {
@@ -141,8 +141,17 @@ struct PencilCanvas: UIViewRepresentable {
             didApplyInitialZoom = true
         }
 
-        func pencilInteractionDidTap(_ interaction: UIPencilInteraction) {
-            parent.onPencilDoubleTap()
+        // Apple Pencil barrel gestures. The legacy `pencilInteractionDidTap` was
+        // deprecated in iOS 17.5 and is no longer delivered on this OS, so we implement
+        // the current delegate methods. There is no single-tap gesture in hardware:
+        // double-tap (Pencil 2 / Pro) and squeeze (Pro only) are the only ones.
+        func pencilInteraction(_ interaction: UIPencilInteraction, didReceiveTap tap: UIPencilInteraction.Tap) {
+            parent.onPencilTap()
+        }
+
+        func pencilInteraction(_ interaction: UIPencilInteraction, didReceiveSqueeze squeeze: UIPencilInteraction.Squeeze) {
+            guard squeeze.phase == .ended else { return }   // fire once, when the squeeze completes
+            parent.onPencilTap()
         }
 
         // MARK: photo layers
