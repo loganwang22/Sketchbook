@@ -122,11 +122,17 @@ struct DrawingView: View {
                          allowFingerDrawing: fingerPref.allowFingerDrawing,
                          photos: artboardPhotos,
                          showGrid: viewModel.isChineseWriting,
+                         sprayActive: viewModel.selectedBrush == .spray,
+                         spraySplats: viewModel.spraySplats,
                          initialZoom: viewModel.isChineseWriting ? 0.65 : nil,
                          onStrokeEnd: { viewModel.scheduleSave() },
                          onCanvasReady: { viewModel.canvasRef = $0 },
                          onPencilTap: { viewModel.togglePencilEraser() },
-                         onStraightLineActiveChanged: { viewModel.straightLineActive = $0 })
+                         onStraightLineActiveChanged: { viewModel.straightLineActive = $0 },
+                         onSpraySplat: { splat in
+                             viewModel.spraySplats.append(splat)
+                             viewModel.scheduleSave()
+                         })
                 // In writing mode, inset the page so the grid clears the top bar and
                 // bottom dock and has a comfortable margin from the screen edges.
                 .padding(.top, viewModel.isChineseWriting ? gridInset.top : 0)

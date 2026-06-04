@@ -19,11 +19,13 @@ struct Drawing: Identifiable, Codable, Equatable {
     /// decode (nil -> fall back to the default KidPalette).
     var palette: [ColorRGBA]?
     var kind: DrawingKind
+    /// Custom spray-paint strokes, rendered by the app (PencilKit has no airbrush ink).
+    var spraySplats: [SpraySplat]
 
     init(id: UUID, createdAt: Date, updatedAt: Date, pkDrawingData: Data,
          backgroundColor: ColorRGBA, photoLayers: [PhotoLayer] = [],
          thumbnailFilename: String, palette: [ColorRGBA]? = nil,
-         kind: DrawingKind = .freeform) {
+         kind: DrawingKind = .freeform, spraySplats: [SpraySplat] = []) {
         self.id = id
         self.createdAt = createdAt
         self.updatedAt = updatedAt
@@ -33,6 +35,7 @@ struct Drawing: Identifiable, Codable, Equatable {
         self.thumbnailFilename = thumbnailFilename
         self.palette = palette
         self.kind = kind
+        self.spraySplats = spraySplats
     }
 
     static func empty(kind: DrawingKind = .freeform) -> Drawing {
@@ -61,7 +64,7 @@ struct Drawing: Identifiable, Codable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case id, createdAt, updatedAt, pkDrawingData, backgroundColor
         case photoLayers, photoLayer   // photoLayer is the legacy single-photo key
-        case thumbnailFilename, palette, kind
+        case thumbnailFilename, palette, kind, spraySplats
     }
 
     // Custom decode to migrate older saves that stored a single `photoLayer` into the
@@ -76,6 +79,7 @@ struct Drawing: Identifiable, Codable, Equatable {
         thumbnailFilename = try c.decode(String.self, forKey: .thumbnailFilename)
         palette = try c.decodeIfPresent([ColorRGBA].self, forKey: .palette)
         kind = try c.decodeIfPresent(DrawingKind.self, forKey: .kind) ?? .freeform
+        spraySplats = try c.decodeIfPresent([SpraySplat].self, forKey: .spraySplats) ?? []
         if let layers = try c.decodeIfPresent([PhotoLayer].self, forKey: .photoLayers) {
             photoLayers = layers
         } else if let legacy = try c.decodeIfPresent(PhotoLayer.self, forKey: .photoLayer) {
@@ -96,5 +100,6 @@ struct Drawing: Identifiable, Codable, Equatable {
         try c.encode(thumbnailFilename, forKey: .thumbnailFilename)
         try c.encodeIfPresent(palette, forKey: .palette)
         try c.encode(kind, forKey: .kind)
+        try c.encode(spraySplats, forKey: .spraySplats)
     }
 }

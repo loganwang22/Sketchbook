@@ -9,6 +9,7 @@ final class DrawingViewModel: ObservableObject {
     @Published var pkDrawingData: Data { didSet { markDirty() } }
     @Published var backgroundColor: ColorRGBA { didSet { markDirty() } }
     @Published var photoLayers: [PhotoLayer] { didSet { markDirty() } }
+    @Published var spraySplats: [SpraySplat] { didSet { markDirty() } }
     @Published var palette: [ColorRGBA] { didSet { markDirty() } }
     @Published var photosHidden = false  // transient view toggle, not part of the artwork
     @Published var editingPhoto = false  // transient: picture move/scale/rotate mode
@@ -43,6 +44,7 @@ final class DrawingViewModel: ObservableObject {
         self.pkDrawingData = drawing.pkDrawingData
         self.backgroundColor = drawing.backgroundColor
         self.photoLayers = drawing.photoLayers
+        self.spraySplats = drawing.spraySplats
         let loadedPalette = drawing.palette ?? KidPalette.colors.map(\.color)
         self.palette = loadedPalette
         self.selectedColor = loadedPalette.last ?? KidPalette.colors[9].color
@@ -74,6 +76,7 @@ final class DrawingViewModel: ObservableObject {
         drawing.pkDrawingData = pkDrawingData
         drawing.backgroundColor = backgroundColor
         drawing.photoLayers = photoLayers
+        drawing.spraySplats = spraySplats
         drawing.palette = palette
         drawing.touch()
         try store.save(drawing)
@@ -95,6 +98,7 @@ final class DrawingViewModel: ObservableObject {
 
     func clearCanvas() throws {
         pkDrawingData = Data()
+        spraySplats = []
         try flushSave()
     }
 

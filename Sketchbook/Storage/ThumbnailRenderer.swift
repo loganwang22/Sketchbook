@@ -32,10 +32,21 @@ enum ThumbnailRenderer {
                            blendMode: .normal, alpha: CGFloat(layer.opacity))
             }
 
-            if !drawing.pkDrawingData.isEmpty,
-               let pk = try? PKDrawing(data: drawing.pkDrawingData), !pk.bounds.isNull {
-                let strokes = pk.image(from: pk.bounds, scale: UIScreen.main.scale)
-                strokes.draw(in: aspectFit(strokes.size, into: bounds))
+            // Strokes and spray share one content→thumbnail mapping so they line up.
+            let pk = drawing.pkDrawingData.isEmpty ? nil : try? PKDrawing(data: drawing.pkDrawingData)
+            var content = CGRect.null
+            if let pk, !pk.bounds.isNull { content = content.union(pk.bounds) }
+            for splat in drawing.spraySplats { if let b = splat.bounds { content = content.union(b) } }
+            if !content.isNull, content.width > 0, content.height > 0 {
+                let scale = min(bounds.width / content.width, bounds.height / content.height)
+                let w = content.width * scale, h = content.height * scale
+                let fit = CGRect(x: bounds.midX - w / 2, y: bounds.midY - h / 2, width: w, height: h)
+                if let pk, !pk.bounds.isNull {
+                    pk.image(from: content, scale: UIScreen.main.scale).draw(in: fit)
+                }
+                SprayRenderer.draw(drawing.spraySplats, in: ctx.cgContext, scale: scale, clip: nil,
+                                   map: { x, y in CGPoint(x: fit.minX + (CGFloat(x) - content.minX) * scale,
+                                                          y: fit.minY + (CGFloat(y) - content.minY) * scale) })
             }
 
             for layer in drawing.photoLayers where layer.mode == .coloringPage {

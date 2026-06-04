@@ -23,11 +23,14 @@ struct PencilCanvas: UIViewRepresentable {
     let allowFingerDrawing: Bool
     var photos: [ArtboardPhoto] = []
     var showGrid: Bool = false
+    var sprayActive: Bool = false
+    var spraySplats: [SpraySplat] = []
     var initialZoom: CGFloat? = nil
     let onStrokeEnd: () -> Void
     let onCanvasReady: (PKCanvasView) -> Void
     var onPencilTap: () -> Void = {}
     var onStraightLineActiveChanged: (Bool) -> Void = { _ in }
+    var onSpraySplat: (SpraySplat) -> Void = { _ in }
 
     func makeUIView(context: Context) -> ArtboardContainer {
         let container = ArtboardContainer()
@@ -95,6 +98,8 @@ struct PencilCanvas: UIViewRepresentable {
         private var photoRects: [UUID: CGRect] = [:]
         private var photoParams: [UUID: ArtboardPhoto] = [:]
         private weak var gridView: MiziGridView?
+        private weak var sprayLayer: SprayLayerView?
+        private var lastSplatCount = -1
         private var didApplyInitialZoom = false
         var isApplyingInitialDrawing = false
 
@@ -113,10 +118,13 @@ struct PencilCanvas: UIViewRepresentable {
 
         func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
             guard !isApplyingInitialDrawing else { return }
-            if (shiftHeld || controlHeld), !isStraightening,
-               canvasView.drawing.strokes.count == lastStrokeCount + 1 {
+            if !isStraightening, canvasView.drawing.strokes.count == lastStrokeCount + 1 {
                 isStraightening = true
-                straightenLastStroke(canvasView, axisAligned: shiftHeld)
+                if parent.sprayActive {
+                    sprayLastStroke(canvasView)
+                } else if shiftHeld || controlHeld {
+                    straightenLastStroke(canvasView, axisAligned: shiftHeld)
+                }
                 isStraightening = false
             }
             lastStrokeCount = canvasView.drawing.strokes.count
@@ -174,6 +182,21 @@ struct PencilCanvas: UIViewRepresentable {
                 gridView = nil
             }
 
+            // Custom spray-paint layer (always present; empty when there's no spray).
+            if sprayLayer == nil {
+                let layer = SprayLayerView()
+                layer.isUserInteractionEnabled = false
+                layer.backgroundColor = .clear
+                layer.contentMode = .redraw
+                layer.frame = container.bounds
+                sprayLayer = layer
+                container.addSubview(layer)
+            }
+            if lastSplatCount != parent.spraySplats.count {
+                lastSplatCount = parent.spraySplats.count
+                sprayLayer?.setSplats(parent.spraySplats)
+            }
+
             let ids = Set(photos.map(\.id))
 
             // Drop views for layers that no longer exist.
@@ -203,11 +226,12 @@ struct PencilCanvas: UIViewRepresentable {
                 photoParams[photo.id] = photo
             }
 
-            // Z-order, bottom to top: grid, trace layers, the canvas, colour layers.
+            // Z-order, bottom to top: grid, trace layers, the canvas, spray, colour layers.
             var ordered: [UIView] = []
             if let gridView { ordered.append(gridView) }
             ordered += photos.filter { $0.mode == .trace }.compactMap { photoViews[$0.id] }
             ordered.append(canvas)
+            if let sprayLayer { ordered.append(sprayLayer) }
             ordered += photos.filter { $0.mode == .coloringPage }.compactMap { photoViews[$0.id] }
             for (index, view) in ordered.enumerated() {
                 container.insertSubview(view, at: index)
@@ -235,6 +259,10 @@ struct PencilCanvas: UIViewRepresentable {
             if let gridView, let container {
                 gridView.frame = container.bounds
                 gridView.update(zoom: z, offset: off)
+            }
+            if let sprayLayer, let container {
+                sprayLayer.frame = container.bounds
+                sprayLayer.update(zoom: z, offset: off)
             }
             for (id, view) in photoViews {
                 if photoRects[id] == nil { capturePhotoRect(for: id) }
@@ -288,6 +316,22 @@ struct PencilCanvas: UIViewRepresentable {
             canvas.drawing = PKDrawing(strokes: strokes)
         }
 
+        // MARK: spray
+
+        /// Custom spray brush: the thin guide line the child drew is removed and converted
+        /// into a SpraySplat (a cloud of fine paint particles) that the app renders itself.
+        /// PencilKit can't render fine spray dots, so spray lives outside PencilKit.
+        private func sprayLastStroke(_ canvas: PKCanvasView) {
+            var strokes = canvas.drawing.strokes
+            guard let guide = strokes.popLast() else { return }
+            let points = guide.path.map(\.location)
+            let nozzle = max(guide.path.first?.size.width ?? 10, 4)
+            let color = ColorRGBA(Color(uiColor: guide.ink.color))
+            canvas.drawing = PKDrawing(strokes: strokes)   // drop the guide pen line
+            let splat = SprayRenderer.makeSplat(points: points, nozzle: nozzle, color: color)
+            if splat.count > 0 { parent.onSpraySplat(splat) }
+        }
+
         // MARK: hardware keyboard (Shift / Control) tracking
 
         func startObservingKeyboard() {
@@ -330,6 +374,30 @@ final class ArtboardContainer: UIView {
     override func layoutSubviews() {
         super.layoutSubviews()
         onLayout?()
+    }
+}
+
+/// Renders custom spray-paint splats in canvas content space, tracking zoom/pan so the
+/// paint stays put on the canvas (like the grid). Drawn by the app, not PencilKit.
+final class SprayLayerView: UIView {
+    private var splats: [SpraySplat] = []
+    private var zoom: CGFloat = 1
+    private var offset: CGPoint = .zero
+
+    func setSplats(_ splats: [SpraySplat]) {
+        self.splats = splats
+        setNeedsDisplay()
+    }
+    func update(zoom: CGFloat, offset: CGPoint) {
+        self.zoom = zoom
+        self.offset = offset
+        setNeedsDisplay()
+    }
+    override func draw(_ rect: CGRect) {
+        guard let ctx = UIGraphicsGetCurrentContext(), !splats.isEmpty else { return }
+        let z = zoom, off = offset
+        SprayRenderer.draw(splats, in: ctx, scale: z, clip: bounds,
+                           map: { x, y in CGPoint(x: CGFloat(x) * z - off.x, y: CGFloat(y) * z - off.y) })
     }
 }
 
