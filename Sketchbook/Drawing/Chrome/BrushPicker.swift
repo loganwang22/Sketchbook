@@ -3,11 +3,13 @@ import SwiftUI
 struct BrushPicker: View {
     @Binding var selectedBrush: BrushKind
     @Binding var selectedSize: BrushSize
+    /// Which brushes to offer. Chinese writing mode passes `[.pen, .eraser]`.
+    var brushes: [BrushKind] = BrushKind.allCases
     @State private var bloomedBrush: BrushKind?
 
     var body: some View {
         HStack(spacing: 8) {
-            ForEach(BrushKind.allCases) { brush in
+            ForEach(brushes) { brush in
                 brushButton(brush)
             }
         }

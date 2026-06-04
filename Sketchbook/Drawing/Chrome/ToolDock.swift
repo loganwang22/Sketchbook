@@ -6,12 +6,14 @@ struct ToolDock: View {
     @Binding var color: ColorRGBA
     @Binding var palette: [ColorRGBA]
     let onPhotoTap: () -> Void
-    /// Chinese writing mode: only the colour palette (pen is locked, no brushes/photos).
-    var colorsOnly: Bool = false
+    /// Chinese writing mode: pen + eraser only (no artist brushes), plus the palette.
+    var writingMode: Bool = false
 
     var body: some View {
         HStack(spacing: 16) {
-            if colorsOnly {
+            if writingMode {
+                BrushPicker(selectedBrush: $brush, selectedSize: $size, brushes: [.pen, .eraser])
+                Divider().frame(height: 40)
                 ColorPalette(palette: $palette, selectedColor: $color)
             } else {
                 BrushPicker(selectedBrush: $brush, selectedSize: $size)

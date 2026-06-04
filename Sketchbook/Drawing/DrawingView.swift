@@ -164,7 +164,7 @@ struct DrawingView: View {
                      color: $viewModel.selectedColor,
                      palette: $viewModel.palette,
                      onPhotoTap: { showPhotoFlow = true },
-                     colorsOnly: viewModel.isChineseWriting)
+                     writingMode: viewModel.isChineseWriting)
             .padding(.bottom, 12)
         }
     }
