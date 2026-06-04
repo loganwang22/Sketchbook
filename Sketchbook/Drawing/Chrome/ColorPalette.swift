@@ -1,5 +1,4 @@
 import SwiftUI
-import UIKit
 
 struct ColorPalette: View {
     @Binding var palette: [ColorRGBA]
@@ -16,9 +15,9 @@ struct ColorPalette: View {
             }
         }
         .sheet(item: $editing) { slot in
-            // Opens straight into the system colour picker, pre-selected to the swatch's
-            // current colour. Picking updates the swatch (and the active colour) live.
-            SystemColorPicker(
+            // Custom single-panel picker (spectrum + H/S/L bars). Editing updates the
+            // swatch and the active colour live.
+            ColorEditor(
                 color: Binding(
                     get: { palette[slot.index] },
                     set: { newColor in
@@ -28,7 +27,8 @@ struct ColorPalette: View {
                 ),
                 onFinish: { editing = nil }
             )
-            .ignoresSafeArea()
+            .presentationDetents([.height(540)])
+            .presentationDragIndicator(.visible)
         }
     }
 
@@ -44,38 +44,6 @@ struct ColorPalette: View {
             .onLongPressGesture(minimumDuration: 0.4) { editing = EditSlot(index: index) }
             .accessibilityLabel("Colour \(index + 1)")
             .accessibilityHint("Tap to use. Touch and hold to change this colour.")
-    }
-}
-
-/// Presents the iOS system colour picker directly, bound to a `ColorRGBA`.
-private struct SystemColorPicker: UIViewControllerRepresentable {
-    @Binding var color: ColorRGBA
-    let onFinish: () -> Void
-
-    func makeUIViewController(context: Context) -> UIColorPickerViewController {
-        let picker = UIColorPickerViewController()
-        picker.selectedColor = color.uiColor
-        picker.supportsAlpha = false
-        picker.delegate = context.coordinator
-        return picker
-    }
-
-    func updateUIViewController(_ picker: UIColorPickerViewController, context: Context) {}
-
-    func makeCoordinator() -> Coordinator { Coordinator(self) }
-
-    final class Coordinator: NSObject, UIColorPickerViewControllerDelegate {
-        let parent: SystemColorPicker
-        init(_ parent: SystemColorPicker) { self.parent = parent }
-
-        func colorPickerViewController(_ viewController: UIColorPickerViewController,
-                                       didSelect color: UIColor, continuously: Bool) {
-            parent.color = ColorRGBA(Color(uiColor: color))
-        }
-
-        func colorPickerViewControllerDidFinish(_ viewController: UIColorPickerViewController) {
-            parent.onFinish()
-        }
     }
 }
 
