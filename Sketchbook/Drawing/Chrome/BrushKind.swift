@@ -2,25 +2,36 @@ import PencilKit
 import UIKit
 
 enum BrushKind: String, CaseIterable, Identifiable {
-    case pen, crayon, fountainPen, paintbrush, eraser
+    case pen, crayon, fountainPen, paintbrush, spray, eraser
 
     var id: String { rawValue }
+
     /// Label shown in the HUD when the pencil gesture switches tools.
     var displayName: String {
         switch self {
         case .fountainPen: return "Fountain pen"
+        case .paintbrush:  return "Oil paint"
+        case .spray:       return "Spray"
         default:           return rawValue.capitalized
         }
     }
-    var displaySymbol: String {
+
+    /// Dock icon. Most brushes use an SF Symbol; the quill has no symbol so it uses the
+    /// feather emoji (a quill pen literally is a feather).
+    enum Glyph { case symbol(String), text(String) }
+    var glyph: Glyph {
         switch self {
-        case .pen:         return "pencil.tip"
-        case .crayon:      return "pencil"
-        case .fountainPen: return "signature"   // fancy calligraphic flourish
-        case .paintbrush:  return "paintbrush.pointed.fill"
-        case .eraser:      return "eraser.fill"
+        case .pen:         return .symbol("pencil.tip")
+        case .crayon:      return .symbol("scribble.variable")  // waxy scribble, not a pencil
+        case .fountainPen: return .text("🪶")                   // pen with a feather (quill)
+        case .paintbrush:  return .symbol("paintbrush.fill")    // flat loaded oil brush
+        case .spray:       return .symbol("sparkles")           // scattered spray burst
+        case .eraser:      return .symbol("eraser.fill")
         }
     }
+
+    /// True for brushes whose stroke is post-processed after it's drawn (spray scatter).
+    var isSpray: Bool { self == .spray }
 }
 
 enum BrushSize: Double, CaseIterable, Identifiable {
@@ -39,7 +50,7 @@ enum BrushSize: Double, CaseIterable, Identifiable {
         }
     }
 
-    /// The paintbrush lays down a much thicker, loaded-brush stroke than the ink tools.
+    /// The oil brush lays down a much thicker, loaded-brush stroke than the ink tools.
     var paintWidth: Double {
         switch self {
         case .small:  return 14
@@ -48,7 +59,7 @@ enum BrushSize: Double, CaseIterable, Identifiable {
         }
     }
 
-    /// Stroke width for a given brush (eraser and paintbrush use their own larger scales).
+    /// Stroke width for a given brush (eraser and oil brush use their own larger scales).
     func width(for brush: BrushKind) -> Double {
         switch brush {
         case .eraser:     return eraserWidth
@@ -64,7 +75,9 @@ extension BrushKind {
         case .pen:         return PKInkingTool(.pen,         color: color, width: size.width(for: self))
         case .crayon:      return PKInkingTool(.crayon,      color: color, width: size.width(for: self))
         case .fountainPen: return PKInkingTool(.fountainPen, color: color, width: size.width(for: self))
-        case .paintbrush:  return PKInkingTool(.watercolor,  color: color, width: size.width(for: self))
+        case .paintbrush:  return PKInkingTool(.reed,        color: color, width: size.width(for: self))
+        // Spray draws as a normal pen line, then the canvas scatters it into dots on lift.
+        case .spray:       return PKInkingTool(.pen,         color: color, width: size.width(for: self))
         case .eraser:      return PKEraserTool(.bitmap, width: size.width(for: self))
         }
     }

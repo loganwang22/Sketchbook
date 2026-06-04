@@ -33,8 +33,7 @@ struct BrushPicker: View {
                 bloomedBrush = nil
             }
         } label: {
-            Image(systemName: brush.displaySymbol)
-                .font(.system(size: 28, weight: .semibold))
+            glyph(brush)
                 .frame(width: 56, height: 56)
                 .background(isSelected ? AnyShapeStyle(.tint.opacity(0.25)) : AnyShapeStyle(.clear),
                             in: Circle())
@@ -43,6 +42,16 @@ struct BrushPicker: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(brush.displayName)
+    }
+
+    @ViewBuilder
+    private func glyph(_ brush: BrushKind) -> some View {
+        switch brush.glyph {
+        case .symbol(let name):
+            Image(systemName: name).font(.system(size: 28, weight: .semibold))
+        case .text(let emoji):
+            Text(emoji).font(.system(size: 30))
+        }
     }
 
     private var sizeBloom: some View {

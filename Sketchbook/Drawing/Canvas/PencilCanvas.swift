@@ -23,6 +23,7 @@ struct PencilCanvas: UIViewRepresentable {
     let allowFingerDrawing: Bool
     var photos: [ArtboardPhoto] = []
     var showGrid: Bool = false
+    var sprayActive: Bool = false
     var initialZoom: CGFloat? = nil
     let onStrokeEnd: () -> Void
     let onCanvasReady: (PKCanvasView) -> Void
@@ -113,10 +114,13 @@ struct PencilCanvas: UIViewRepresentable {
 
         func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
             guard !isApplyingInitialDrawing else { return }
-            if (shiftHeld || controlHeld), !isStraightening,
-               canvasView.drawing.strokes.count == lastStrokeCount + 1 {
+            if !isStraightening, canvasView.drawing.strokes.count == lastStrokeCount + 1 {
                 isStraightening = true
-                straightenLastStroke(canvasView, axisAligned: shiftHeld)
+                if parent.sprayActive {
+                    sprayLastStroke(canvasView)
+                } else if shiftHeld || controlHeld {
+                    straightenLastStroke(canvasView, axisAligned: shiftHeld)
+                }
                 isStraightening = false
             }
             lastStrokeCount = canvasView.drawing.strokes.count
@@ -285,6 +289,61 @@ struct PencilCanvas: UIViewRepresentable {
             }
             let newPath = PKStrokePath(controlPoints: points, creationDate: Date())
             strokes[strokes.count - 1] = PKStroke(ink: last.ink, path: newPath)
+            canvas.drawing = PKDrawing(strokes: strokes)
+        }
+
+        /// Replaces the last stroke with a cloud of scattered dots along its path — an
+        /// airbrush/spray effect (PencilKit has no native airbrush ink). Done on lift,
+        /// mirroring the straight-line transform, so it's a single undo step.
+        private func sprayLastStroke(_ canvas: PKCanvasView) {
+            var strokes = canvas.drawing.strokes
+            guard let last = strokes.popLast() else { return }
+            let path = last.path
+            guard path.count >= 1 else { strokes.append(last); canvas.drawing = PKDrawing(strokes: strokes); return }
+
+            // The drawn pen width drives the spray's grain and spread.
+            let brushWidth = max(path.first?.size.width ?? 10, 4)
+            let spread = brushWidth * 1.6
+            let spacing = max(brushWidth * 0.45, 2)
+            let dotsPerSample = 3
+            let maxDots = 1400
+
+            // Sample locations evenly along the path (interpolating between control points).
+            var locations: [CGPoint] = []
+            if path.count == 1 {
+                locations.append(path[0].location)
+            } else {
+                for i in 0..<(path.count - 1) {
+                    let a = path[i].location, b = path[i + 1].location
+                    let segLen = hypot(b.x - a.x, b.y - a.y)
+                    let steps = max(1, Int(segLen / spacing))
+                    for s in 0..<steps {
+                        let t = CGFloat(s) / CGFloat(steps)
+                        locations.append(CGPoint(x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t))
+                    }
+                }
+                locations.append(path[path.count - 1].location)
+            }
+
+            var dots: [PKStroke] = []
+            outer: for loc in locations {
+                for _ in 0..<dotsPerSample {
+                    // Gaussian-ish offset (sum of two uniforms) so the cloud is denser at the centre.
+                    let dx = (CGFloat.random(in: -1...1) + CGFloat.random(in: -1...1)) / 2 * spread
+                    let dy = (CGFloat.random(in: -1...1) + CGFloat.random(in: -1...1)) / 2 * spread
+                    let dotSize = brushWidth * CGFloat.random(in: 0.12...0.32)
+                    let point = PKStrokePoint(
+                        location: CGPoint(x: loc.x + dx, y: loc.y + dy),
+                        timeOffset: 0,
+                        size: CGSize(width: dotSize, height: dotSize),
+                        opacity: CGFloat.random(in: 0.5...1.0),
+                        force: 1, azimuth: 0, altitude: .pi / 2)
+                    dots.append(PKStroke(ink: last.ink, path: PKStrokePath(controlPoints: [point], creationDate: Date())))
+                    if dots.count >= maxDots { break outer }
+                }
+            }
+
+            strokes.append(contentsOf: dots)
             canvas.drawing = PKDrawing(strokes: strokes)
         }
 
