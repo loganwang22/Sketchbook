@@ -23,7 +23,6 @@ struct PencilCanvas: UIViewRepresentable {
     let allowFingerDrawing: Bool
     var photos: [ArtboardPhoto] = []
     var showGrid: Bool = false
-    var sprayActive: Bool = false
     var initialZoom: CGFloat? = nil
     let onStrokeEnd: () -> Void
     let onCanvasReady: (PKCanvasView) -> Void
@@ -114,13 +113,10 @@ struct PencilCanvas: UIViewRepresentable {
 
         func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
             guard !isApplyingInitialDrawing else { return }
-            if !isStraightening, canvasView.drawing.strokes.count == lastStrokeCount + 1 {
+            if (shiftHeld || controlHeld), !isStraightening,
+               canvasView.drawing.strokes.count == lastStrokeCount + 1 {
                 isStraightening = true
-                if parent.sprayActive {
-                    sprayLastStroke(canvasView)
-                } else if shiftHeld || controlHeld {
-                    straightenLastStroke(canvasView, axisAligned: shiftHeld)
-                }
+                straightenLastStroke(canvasView, axisAligned: shiftHeld)
                 isStraightening = false
             }
             lastStrokeCount = canvasView.drawing.strokes.count
@@ -290,75 +286,6 @@ struct PencilCanvas: UIViewRepresentable {
             let newPath = PKStrokePath(controlPoints: points, creationDate: Date())
             strokes[strokes.count - 1] = PKStroke(ink: last.ink, path: newPath)
             canvas.drawing = PKDrawing(strokes: strokes)
-        }
-
-        /// Replaces the just-drawn line with a cloud of fine speckles scattered along its
-        /// path — like spray paint on a wall (PencilKit has no airbrush ink). Done on lift,
-        /// mirroring the straight-line transform, so the whole spray is one undo step.
-        ///
-        /// Each speckle is a *two-point* stroke: a single-point path renders nothing in
-        /// PencilKit, which is why the earlier version made strokes vanish.
-        private func sprayLastStroke(_ canvas: PKCanvasView) {
-            var strokes = canvas.drawing.strokes
-            guard let guideline = strokes.popLast() else { return }
-            let path = guideline.path
-            guard path.count >= 1 else { return }
-
-            // The drawn pen width is the spray "nozzle" size: wider stroke → wider mist.
-            let nozzle = max(path.first?.size.width ?? 10, 4)
-            let radius = nozzle * 3.0                       // how far paint scatters from the path
-            let spacing = max(nozzle * 0.4, 2)              // distance between samples along the path
-            let perSample = 5                               // speckles dropped at each sample
-            let maxDots = 1200
-
-            // Sample evenly along the path so density doesn't depend on draw speed.
-            var locations: [CGPoint] = []
-            if path.count == 1 {
-                locations.append(path[0].location)
-            } else {
-                for i in 0..<(path.count - 1) {
-                    let a = path[i].location, b = path[i + 1].location
-                    let steps = max(1, Int(hypot(b.x - a.x, b.y - a.y) / spacing))
-                    for s in 0..<steps {
-                        let t = CGFloat(s) / CGFloat(steps)
-                        locations.append(CGPoint(x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t))
-                    }
-                }
-                locations.append(path[path.count - 1].location)
-            }
-
-            var speckles: [PKStroke] = []
-            outer: for loc in locations {
-                for _ in 0..<perSample {
-                    // Sum of two uniforms ≈ a triangular distribution: denser near the path,
-                    // thinning out toward the edges, like a real spray cone.
-                    let off = (CGFloat.random(in: -1...1) + CGFloat.random(in: -1...1)) / 2
-                    let angle = CGFloat.random(in: 0...(2 * .pi))
-                    let dist = off * radius
-                    let c = CGPoint(x: loc.x + cos(angle) * dist, y: loc.y + sin(angle) * dist)
-                    let dotSize = nozzle * CGFloat.random(in: 0.18...0.5)
-                    speckles.append(speckle(at: c, size: dotSize,
-                                            opacity: CGFloat.random(in: 0.45...1.0),
-                                            ink: guideline.ink))
-                    if speckles.count >= maxDots { break outer }
-                }
-            }
-
-            strokes.append(contentsOf: speckles)
-            canvas.drawing = PKDrawing(strokes: strokes)
-        }
-
-        /// A single round speckle as a tiny two-point stroke (so PencilKit renders it).
-        private func speckle(at c: CGPoint, size: CGFloat, opacity: CGFloat, ink: PKInk) -> PKStroke {
-            func pt(_ p: CGPoint, _ t: TimeInterval) -> PKStrokePoint {
-                PKStrokePoint(location: p, timeOffset: t,
-                              size: CGSize(width: size, height: size),
-                              opacity: opacity, force: 1, azimuth: 0, altitude: .pi / 2)
-            }
-            let path = PKStrokePath(controlPoints: [pt(c, 0),
-                                                    pt(CGPoint(x: c.x + 0.6, y: c.y + 0.6), 0.01)],
-                                    creationDate: Date())
-            return PKStroke(ink: ink, path: path)
         }
 
         // MARK: hardware keyboard (Shift / Control) tracking

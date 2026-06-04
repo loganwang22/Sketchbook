@@ -122,7 +122,6 @@ struct DrawingView: View {
                          allowFingerDrawing: fingerPref.allowFingerDrawing,
                          photos: artboardPhotos,
                          showGrid: viewModel.isChineseWriting,
-                         sprayActive: viewModel.selectedBrush == .spray,
                          initialZoom: viewModel.isChineseWriting ? 0.65 : nil,
                          onStrokeEnd: { viewModel.scheduleSave() },
                          onCanvasReady: { viewModel.canvasRef = $0 },

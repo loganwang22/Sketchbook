@@ -30,8 +30,6 @@ enum BrushKind: String, CaseIterable, Identifiable {
         }
     }
 
-    /// True for brushes whose stroke is post-processed after it's drawn (spray scatter).
-    var isSpray: Bool { self == .spray }
 }
 
 enum BrushSize: Double, CaseIterable, Identifiable {
@@ -59,12 +57,12 @@ enum BrushSize: Double, CaseIterable, Identifiable {
         }
     }
 
-    /// Stroke width for a given brush (eraser and oil brush use their own larger scales).
+    /// Stroke width for a given brush. Eraser, oil and spray lay down broader strokes.
     func width(for brush: BrushKind) -> Double {
         switch brush {
-        case .eraser:     return eraserWidth
-        case .paintbrush: return paintWidth
-        default:          return rawValue
+        case .eraser:               return eraserWidth
+        case .paintbrush, .spray:   return paintWidth
+        default:                    return rawValue
         }
     }
 }
@@ -75,9 +73,11 @@ extension BrushKind {
         case .pen:         return PKInkingTool(.pen,         color: color, width: size.width(for: self))
         case .crayon:      return PKInkingTool(.crayon,      color: color, width: size.width(for: self))
         case .fountainPen: return PKInkingTool(.fountainPen, color: color, width: size.width(for: self))
-        case .paintbrush:  return PKInkingTool(.reed,        color: color, width: size.width(for: self))
-        // Spray draws as a normal pen line, then the canvas scatters it into dots on lift.
-        case .spray:       return PKInkingTool(.pen,         color: color, width: size.width(for: self))
+        // Oil: watercolor is PencilKit's stable paint ink. (.reed crashed with std::bad_alloc.)
+        case .paintbrush:  return PKInkingTool(.watercolor,  color: color, width: size.width(for: self))
+        // Spray: pencil is PencilKit's grainy, scattered ink — the closest built-in
+        // airbrush texture. (A custom particle scatter can't render and crashes memory.)
+        case .spray:       return PKInkingTool(.pencil,      color: color, width: size.width(for: self))
         case .eraser:      return PKEraserTool(.bitmap, width: size.width(for: self))
         }
     }
