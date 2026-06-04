@@ -51,8 +51,7 @@ struct BrushPicker: View {
                 Button { selectedSize = size; bloomedBrush = nil } label: {
                     Circle()
                         .fill(.primary)
-                        .frame(width: CGFloat(size.rawValue) * 1.5,
-                               height: CGFloat(size.rawValue) * 1.5)
+                        .frame(width: bloomDiameter(size), height: bloomDiameter(size))
                         .overlay(
                             Circle().stroke(.tint, lineWidth: selectedSize == size ? 3 : 0)
                         )
@@ -61,8 +60,17 @@ struct BrushPicker: View {
                 .accessibilityLabel("\(size)".capitalized)
             }
         }
+        .frame(height: 64, alignment: .center)
         .padding(12)
         .background(.regularMaterial, in: Capsule())
+    }
+
+    /// Preview dot for the bloom. Erasers are huge in canvas space, so show them at a
+    /// reduced scale (capped) — still visibly larger than the ink brushes.
+    private func bloomDiameter(_ size: BrushSize) -> CGFloat {
+        let width = size.width(for: bloomedBrush ?? selectedBrush)
+        let scaled = (bloomedBrush ?? selectedBrush) == .eraser ? width * 0.42 : width * 1.5
+        return min(scaled, 56)
     }
 }
 
