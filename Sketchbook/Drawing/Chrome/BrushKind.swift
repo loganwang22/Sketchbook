@@ -22,10 +22,10 @@ enum BrushKind: String, CaseIterable, Identifiable {
     var glyph: Glyph {
         switch self {
         case .pen:         return .symbol("pencil.tip")
-        case .crayon:      return .symbol("scribble.variable")  // waxy scribble, not a pencil
+        case .crayon:      return .text("🖍️")                   // a crayon
         case .fountainPen: return .text("🪶")                   // pen with a feather (quill)
         case .paintbrush:  return .symbol("paintbrush.fill")    // flat loaded oil brush
-        case .spray:       return .symbol("sparkles")           // scattered spray burst
+        case .spray:       return .text("🧴")                   // spray bottle
         case .eraser:      return .symbol("eraser.fill")
         }
     }
