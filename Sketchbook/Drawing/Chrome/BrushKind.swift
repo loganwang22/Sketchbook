@@ -16,20 +16,20 @@ enum BrushKind: String, CaseIterable, Identifiable {
         }
     }
 
-    /// Dock icon. Most brushes use an SF Symbol; the quill has no symbol so it uses the
-    /// feather emoji (a quill pen literally is a feather).
-    enum Glyph { case symbol(String), text(String) }
+    /// Dock icon. All icons are flat monochrome for a consistent style: SF Symbols where
+    /// one exists, otherwise a hand-drawn monochrome shape (no SF Symbol for crayon /
+    /// quill / spray can).
+    enum Glyph { case symbol(String), custom(CustomBrushIcon.Kind) }
     var glyph: Glyph {
         switch self {
         case .pen:         return .symbol("pencil.tip")
-        case .crayon:      return .text("🖍️")                   // a crayon
-        case .fountainPen: return .text("🪶")                   // pen with a feather (quill)
+        case .crayon:      return .custom(.crayon)
+        case .fountainPen: return .custom(.quill)
         case .paintbrush:  return .symbol("paintbrush.fill")    // flat loaded oil brush
-        case .spray:       return .text("🧴")                   // spray bottle
+        case .spray:       return .custom(.sprayCan)
         case .eraser:      return .symbol("eraser.fill")
         }
     }
-
 }
 
 enum BrushSize: Double, CaseIterable, Identifiable {

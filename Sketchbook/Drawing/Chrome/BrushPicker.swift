@@ -49,8 +49,8 @@ struct BrushPicker: View {
         switch brush.glyph {
         case .symbol(let name):
             Image(systemName: name).font(.system(size: 28, weight: .semibold))
-        case .text(let emoji):
-            Text(emoji).font(.system(size: 30))
+        case .custom(let kind):
+            CustomBrushIcon(kind: kind).frame(width: 30, height: 30)
         }
     }
 
