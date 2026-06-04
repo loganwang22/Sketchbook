@@ -42,7 +42,7 @@ struct BrushPicker: View {
                 .offset(y: isSelected ? -6 : 0)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(brush.rawValue.capitalized)
+        .accessibilityLabel(brush.displayName)
     }
 
     private var sizeBloom: some View {
@@ -65,12 +65,18 @@ struct BrushPicker: View {
         .background(.regularMaterial, in: Capsule())
     }
 
-    /// Preview dot for the bloom. Erasers are huge in canvas space, so show them at a
-    /// reduced scale (capped) — still visibly larger than the ink brushes.
+    /// Preview dot for the bloom. The eraser and paintbrush are much larger in canvas
+    /// space, so show them at a reduced scale (capped) — still visibly bigger than ink.
     private func bloomDiameter(_ size: BrushSize) -> CGFloat {
-        let width = size.width(for: bloomedBrush ?? selectedBrush)
-        let scaled = (bloomedBrush ?? selectedBrush) == .eraser ? width * 0.42 : width * 1.5
-        return min(scaled, 56)
+        let brush = bloomedBrush ?? selectedBrush
+        let width = size.width(for: brush)
+        let displayScale: CGFloat
+        switch brush {
+        case .eraser:     displayScale = 0.42
+        case .paintbrush: displayScale = 0.7
+        default:          displayScale = 1.5
+        }
+        return min(width * displayScale, 56)
     }
 }
 

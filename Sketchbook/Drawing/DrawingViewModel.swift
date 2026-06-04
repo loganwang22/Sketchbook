@@ -143,7 +143,7 @@ final class DrawingViewModel: ObservableObject {
             lastNonEraserBrush = selectedBrush
             selectedBrush = .eraser
         }
-        showHUD(selectedBrush == .eraser ? "Eraser" : selectedBrush.rawValue.capitalized)
+        showHUD(selectedBrush == .eraser ? "Eraser" : selectedBrush.displayName)
     }
 
     /// Briefly shows a status message (auto-clears) so toggles are obvious.
