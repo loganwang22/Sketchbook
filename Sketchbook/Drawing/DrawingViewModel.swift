@@ -9,8 +9,10 @@ final class DrawingViewModel: ObservableObject {
     @Published var pkDrawingData: Data { didSet { markDirty() } }
     @Published var backgroundColor: ColorRGBA { didSet { markDirty() } }
     @Published var photoLayers: [PhotoLayer] { didSet { markDirty() } }
-    @Published var spraySplats: [SpraySplat] { didSet { markDirty() } }
+    @Published var spraySplats: [SpraySplat] { didSet { markDirty(); sprayRevision &+= 1 } }
     @Published var palette: [ColorRGBA] { didSet { markDirty() } }
+    /// Bumped on every spray change so the canvas knows to resync (load / undo / clear).
+    private(set) var sprayRevision = 0
     @Published var photosHidden = false  // transient view toggle, not part of the artwork
     @Published var editingPhoto = false  // transient: picture move/scale/rotate mode
     @Published var activePhotoID: UUID?  // transient: which picture edit/remove targets
@@ -100,6 +102,18 @@ final class DrawingViewModel: ObservableObject {
         pkDrawingData = Data()
         spraySplats = []
         try flushSave()
+    }
+
+    /// Commits a spray add/erase as a single, reversible step. Registered on the canvas's
+    /// UndoManager so spray interleaves with stroke undo/redo and the toolbar buttons work.
+    func commitSpraySplats(_ new: [SpraySplat]) {
+        let old = spraySplats
+        guard old != new else { return }
+        spraySplats = new
+        canvasRef?.undoManager?.registerUndo(withTarget: self) { vm in
+            vm.commitSpraySplats(old)   // re-registers the redo automatically
+        }
+        scheduleSave()
     }
 
     // MARK: photos

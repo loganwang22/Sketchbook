@@ -5,44 +5,57 @@ import CoreGraphics
 /// PencilKit has no airbrush ink and can't render the fine dots a spray needs.
 enum SprayRenderer {
 
-    /// Builds a spray splat from the path the child drew (points in content space).
-    /// Particles scatter in a cone along the path: dense near it, sparse at the edges.
-    static func makeSplat(points: [CGPoint], nozzle: CGFloat, color: ColorRGBA) -> SpraySplat {
-        let spread = max(nozzle * 4, 16)            // how far paint flies from the path
-        let spacing = max(spread * 0.22, 4)         // sample step along the path
-        let perSample = 6
-        let maxDots = 600
-
-        var samples: [CGPoint] = []
-        if points.count <= 1 {
-            samples = points
-        } else {
-            for i in 0..<(points.count - 1) {
-                let a = points[i], b = points[i + 1]
-                let steps = max(1, Int(hypot(b.x - a.x, b.y - a.y) / spacing))
-                for s in 0..<steps {
-                    let t = CGFloat(s) / CGFloat(steps)
-                    samples.append(CGPoint(x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t))
-                }
-            }
-            samples.append(points[points.count - 1])
-        }
-
-        var xs: [Float] = [], ys: [Float] = [], rs: [Float] = [], alphas: [Float] = []
-        outer: for c in samples {
-            for _ in 0..<perSample {
-                // Sum of two uniforms ≈ triangular falloff (denser toward the path).
+    /// Appends a cone of fine particles for the segment a→b (content space) to `splat`,
+    /// in real time as the pencil moves. Dense near the path, sparse at the edges.
+    static func scatter(into splat: inout SpraySplat, from a: CGPoint, to b: CGPoint, nozzle: CGFloat) {
+        let spread = max(nozzle * 4, 16)
+        let spacing = max(spread * 0.22, 4)
+        let steps = max(1, Int(hypot(b.x - a.x, b.y - a.y) / spacing))
+        for s in 0...steps {
+            let t = CGFloat(s) / CGFloat(steps)
+            let c = CGPoint(x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t)
+            for _ in 0..<3 {
                 let off = (CGFloat.random(in: -1...1) + CGFloat.random(in: -1...1)) / 2
                 let angle = CGFloat.random(in: 0...(2 * .pi))
                 let dist = off * spread
-                xs.append(Float(c.x + cos(angle) * dist))
-                ys.append(Float(c.y + sin(angle) * dist))
-                rs.append(Float.random(in: 0.8...2.4))
-                alphas.append(Float.random(in: 0.35...0.9))
-                if xs.count >= maxDots { break outer }
+                splat.xs.append(Float(c.x + cos(angle) * dist))
+                splat.ys.append(Float(c.y + sin(angle) * dist))
+                splat.rs.append(Float.random(in: 0.8...2.4))
+                splat.alphas.append(Float.random(in: 0.35...0.9))
             }
         }
-        return SpraySplat(color: color, xs: xs, ys: ys, rs: rs, alphas: alphas)
+    }
+
+    /// Removes spray particles within `radius` of the segment a→b. Splats emptied out are
+    /// dropped. Used by the eraser.
+    static func erase(_ splats: [SpraySplat], alongFrom a: CGPoint, to b: CGPoint,
+                      radius: CGFloat) -> [SpraySplat] {
+        let r2 = radius * radius
+        var result: [SpraySplat] = []
+        for splat in splats {
+            var xs: [Float] = [], ys: [Float] = [], rs: [Float] = [], alphas: [Float] = []
+            for i in 0..<splat.count {
+                let p = CGPoint(x: CGFloat(splat.xs[i]), y: CGFloat(splat.ys[i]))
+                if distanceSquaredToSegment(p, a, b) > r2 {
+                    xs.append(splat.xs[i]); ys.append(splat.ys[i])
+                    rs.append(splat.rs[i]); alphas.append(splat.alphas[i])
+                }
+            }
+            if !xs.isEmpty {
+                result.append(SpraySplat(color: splat.color, xs: xs, ys: ys, rs: rs, alphas: alphas))
+            }
+        }
+        return result
+    }
+
+    private static func distanceSquaredToSegment(_ p: CGPoint, _ a: CGPoint, _ b: CGPoint) -> CGFloat {
+        let dx = b.x - a.x, dy = b.y - a.y
+        let len2 = dx * dx + dy * dy
+        guard len2 > 1e-6 else { let ex = p.x - a.x, ey = p.y - a.y; return ex * ex + ey * ey }
+        var t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2
+        t = max(0, min(1, t))
+        let ex = p.x - (a.x + t * dx), ey = p.y - (a.y + t * dy)
+        return ex * ex + ey * ey
     }
 
     /// Draws splats into `ctx`. `map` converts a content-space point to the target space

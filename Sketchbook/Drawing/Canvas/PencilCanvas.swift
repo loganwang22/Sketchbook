@@ -24,13 +24,19 @@ struct PencilCanvas: UIViewRepresentable {
     var photos: [ArtboardPhoto] = []
     var showGrid: Bool = false
     var sprayActive: Bool = false
+    var eraserActive: Bool = false
     var spraySplats: [SpraySplat] = []
+    var sprayRevision: Int = 0
+    var sprayColor: ColorRGBA = ColorRGBA(r: 0, g: 0, b: 0)
+    var eraserRadius: CGFloat = 30
     var initialZoom: CGFloat? = nil
     let onStrokeEnd: () -> Void
     let onCanvasReady: (PKCanvasView) -> Void
     var onPencilTap: () -> Void = {}
     var onStraightLineActiveChanged: (Bool) -> Void = { _ in }
-    var onSpraySplat: (SpraySplat) -> Void = { _ in }
+    /// Called on lift with the full new splats array (spray added or erased) so the model
+    /// can store it and register undo.
+    var onSprayCommit: ([SpraySplat]) -> Void = { _ in }
 
     func makeUIView(context: Context) -> ArtboardContainer {
         let container = ArtboardContainer()
@@ -62,9 +68,22 @@ struct PencilCanvas: UIViewRepresentable {
         pencilInteraction.delegate = context.coordinator
         container.addInteraction(pencilInteraction)
 
+        // Pencil-only recognizer that drives the custom spray brush and spray-erasing in
+        // real time. Disabled for normal brushes, so it can't affect ordinary drawing.
+        let sprayGR = UILongPressGestureRecognizer(target: context.coordinator,
+                                                   action: #selector(Coordinator.handleSpray(_:)))
+        sprayGR.minimumPressDuration = 0
+        sprayGR.allowableMovement = .greatestFiniteMagnitude
+        sprayGR.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.pencil.rawValue)]
+        sprayGR.cancelsTouchesInView = false
+        sprayGR.delegate = context.coordinator
+        sprayGR.isEnabled = false
+        container.addGestureRecognizer(sprayGR)
+
         let coord = context.coordinator
         coord.canvas = canvas
         coord.container = container
+        coord.sprayGR = sprayGR
         container.onLayout = { [weak coord] in coord?.onContainerLayout() }
 
         coord.lastStrokeCount = canvas.drawing.strokes.count
@@ -83,12 +102,21 @@ struct PencilCanvas: UIViewRepresentable {
         if drawingData.isEmpty && !canvas.drawing.strokes.isEmpty {
             canvas.drawing = PKDrawing()
         }
+        // Spray captures the pencil itself; eraser lets PencilKit erase strokes while the
+        // recognizer also removes spray. Both modes enable the recognizer; spray also
+        // suppresses PencilKit's pen line so the pencil only sprays.
+        // Spray always needs the recognizer; the eraser only needs it when there's spray
+        // to remove (otherwise erasing stays purely PencilKit, untouched).
+        coord.sprayGR?.isEnabled = sprayActive || (eraserActive && !spraySplats.isEmpty)
+        canvas.drawingGestureRecognizer.isEnabled = !sprayActive
+        coord.syncWorkingSplatsIfNeeded()
         coord.applyPhotos(photos)
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
-    final class Coordinator: NSObject, PKCanvasViewDelegate, UIPencilInteractionDelegate {
+    final class Coordinator: NSObject, PKCanvasViewDelegate, UIPencilInteractionDelegate,
+                             UIGestureRecognizerDelegate {
         var parent: PencilCanvas
         weak var canvas: PKCanvasView?
         weak var container: ArtboardContainer?
@@ -99,9 +127,17 @@ struct PencilCanvas: UIViewRepresentable {
         private var photoParams: [UUID: ArtboardPhoto] = [:]
         private weak var gridView: MiziGridView?
         private weak var sprayLayer: SprayLayerView?
-        private var lastSplatCount = -1
         private var didApplyInitialZoom = false
         var isApplyingInitialDrawing = false
+
+        // Spray brush state. `workingSplats` is the live copy the layer renders; it syncs
+        // from the model whenever `sprayRevision` changes (load / undo / clear).
+        weak var sprayGR: UILongPressGestureRecognizer?
+        private var workingSplats: [SpraySplat] = []
+        private var liveSplat: SpraySplat?
+        private var lastSprayPoint: CGPoint?
+        private var lastSprayRevision = -1
+        private let maxLiveParticles = 5000
 
         // Straight-line support: Shift = horizontal/vertical, Control = any angle.
         var lastStrokeCount = 0
@@ -118,13 +154,10 @@ struct PencilCanvas: UIViewRepresentable {
 
         func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
             guard !isApplyingInitialDrawing else { return }
-            if !isStraightening, canvasView.drawing.strokes.count == lastStrokeCount + 1 {
+            if (shiftHeld || controlHeld), !isStraightening,
+               canvasView.drawing.strokes.count == lastStrokeCount + 1 {
                 isStraightening = true
-                if parent.sprayActive {
-                    sprayLastStroke(canvasView)
-                } else if shiftHeld || controlHeld {
-                    straightenLastStroke(canvasView, axisAligned: shiftHeld)
-                }
+                straightenLastStroke(canvasView, axisAligned: shiftHeld)
                 isStraightening = false
             }
             lastStrokeCount = canvasView.drawing.strokes.count
@@ -189,12 +222,9 @@ struct PencilCanvas: UIViewRepresentable {
                 layer.backgroundColor = .clear
                 layer.contentMode = .redraw
                 layer.frame = container.bounds
+                layer.splats = workingSplats
                 sprayLayer = layer
                 container.addSubview(layer)
-            }
-            if lastSplatCount != parent.spraySplats.count {
-                lastSplatCount = parent.spraySplats.count
-                sprayLayer?.setSplats(parent.spraySplats)
             }
 
             let ids = Set(photos.map(\.id))
@@ -316,20 +346,101 @@ struct PencilCanvas: UIViewRepresentable {
             canvas.drawing = PKDrawing(strokes: strokes)
         }
 
-        // MARK: spray
+        // MARK: spray (custom real-time brush)
 
-        /// Custom spray brush: the thin guide line the child drew is removed and converted
-        /// into a SpraySplat (a cloud of fine paint particles) that the app renders itself.
-        /// PencilKit can't render fine spray dots, so spray lives outside PencilKit.
-        private func sprayLastStroke(_ canvas: PKCanvasView) {
-            var strokes = canvas.drawing.strokes
-            guard let guide = strokes.popLast() else { return }
-            let points = guide.path.map(\.location)
-            let nozzle = max(guide.path.first?.size.width ?? 10, 4)
-            let color = ColorRGBA(Color(uiColor: guide.ink.color))
-            canvas.drawing = PKDrawing(strokes: strokes)   // drop the guide pen line
-            let splat = SprayRenderer.makeSplat(points: points, nozzle: nozzle, color: color)
-            if splat.count > 0 { parent.onSpraySplat(splat) }
+        /// Pulls the latest spray from the model into the working copy when it changed
+        /// outside a live stroke (open, undo/redo, clear).
+        func syncWorkingSplatsIfNeeded() {
+            guard parent.sprayRevision != lastSprayRevision else { return }
+            lastSprayRevision = parent.sprayRevision
+            workingSplats = parent.spraySplats
+            sprayLayer?.splats = workingSplats
+            sprayLayer?.liveSplat = nil
+            sprayLayer?.setNeedsDisplay()
+        }
+
+        /// Two recognizers (PencilKit's eraser + ours) must work together so the eraser
+        /// removes strokes and spray at once.
+        func gestureRecognizer(_ g: UIGestureRecognizer,
+                               shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
+
+        /// Real-time spray / spray-erase. The pencil is captured here (not by PencilKit),
+        /// so paint appears as the child moves rather than after they lift.
+        @objc func handleSpray(_ g: UILongPressGestureRecognizer) {
+            guard let canvas, let container else { return }
+            let z = canvas.zoomScale
+            let off = canvas.contentOffset
+            let loc = g.location(in: container)
+            let point = CGPoint(x: (loc.x + off.x) / z, y: (loc.y + off.y) / z)  // -> content space
+
+            switch g.state {
+            case .began:
+                canvas.panGestureRecognizer.isEnabled = false   // a resting palm shouldn't pan
+                lastSprayPoint = point
+                if parent.sprayActive {
+                    liveSplat = SpraySplat(color: parent.sprayColor, xs: [], ys: [], rs: [], alphas: [])
+                    stampSpray(from: point, to: point)
+                } else if parent.eraserActive {
+                    eraseSpray(at: point)
+                }
+            case .changed:
+                let from = lastSprayPoint ?? point
+                if parent.sprayActive {
+                    stampSpray(from: from, to: point)
+                } else if parent.eraserActive {
+                    eraseSpray(from: from, to: point)
+                }
+                lastSprayPoint = point
+            case .ended, .cancelled, .failed:
+                canvas.panGestureRecognizer.isEnabled = true
+                lastSprayPoint = nil
+                if parent.sprayActive, let live = liveSplat, live.count > 0 {
+                    workingSplats.append(live)
+                    liveSplat = nil
+                    sprayLayer?.liveSplat = nil
+                    parent.onSprayCommit(workingSplats)
+                } else if parent.eraserActive {
+                    parent.onSprayCommit(workingSplats)
+                }
+                liveSplat = nil
+            default:
+                break
+            }
+        }
+
+        private func stampSpray(from a: CGPoint, to b: CGPoint) {
+            guard liveSplat != nil, liveSplat!.count < maxLiveParticles else { return }
+            SprayRenderer.scatter(into: &liveSplat!, from: a, to: b, nozzle: sprayNozzle)
+            sprayLayer?.liveSplat = liveSplat
+            // Redraw just the affected band.
+            sprayLayer?.setNeedsDisplay(dirtyRect(a, b, pad: sprayNozzle * 4 + 6))
+        }
+
+        /// Spray nozzle width in content space (drives scatter spread). Mirrors BrushKind.
+        private var sprayNozzle: CGFloat {
+            (parent.tool as? PKInkingTool).map { CGFloat($0.width) } ?? 10
+        }
+
+        private func eraseSpray(at point: CGPoint) { eraseSpray(from: point, to: point) }
+        private func eraseSpray(from a: CGPoint, to b: CGPoint) {
+            let r = parent.eraserRadius
+            let before = workingSplats
+            workingSplats = SprayRenderer.erase(workingSplats, alongFrom: a, to: b, radius: r)
+            if workingSplats.count != before.count || workingSplats != before {
+                sprayLayer?.splats = workingSplats
+                sprayLayer?.setNeedsDisplay(dirtyRect(a, b, pad: r + 6))
+            }
+        }
+
+        /// Bounding rect in container coords for the segment a→b (content space) padded out.
+        private func dirtyRect(_ a: CGPoint, _ b: CGPoint, pad: CGFloat) -> CGRect {
+            guard let canvas else { return .zero }
+            let z = canvas.zoomScale, off = canvas.contentOffset
+            func toView(_ p: CGPoint) -> CGPoint { CGPoint(x: p.x * z - off.x, y: p.y * z - off.y) }
+            let va = toView(a), vb = toView(b)
+            let p = pad * z
+            return CGRect(x: min(va.x, vb.x) - p, y: min(va.y, vb.y) - p,
+                          width: abs(va.x - vb.x) + 2 * p, height: abs(va.y - vb.y) + 2 * p)
         }
 
         // MARK: hardware keyboard (Shift / Control) tracking
@@ -380,24 +491,24 @@ final class ArtboardContainer: UIView {
 /// Renders custom spray-paint splats in canvas content space, tracking zoom/pan so the
 /// paint stays put on the canvas (like the grid). Drawn by the app, not PencilKit.
 final class SprayLayerView: UIView {
-    private var splats: [SpraySplat] = []
+    var splats: [SpraySplat] = []          // committed spray (the coordinator's working copy)
+    var liveSplat: SpraySplat?             // the in-progress spray stroke
     private var zoom: CGFloat = 1
     private var offset: CGPoint = .zero
 
-    func setSplats(_ splats: [SpraySplat]) {
-        self.splats = splats
-        setNeedsDisplay()
-    }
     func update(zoom: CGFloat, offset: CGPoint) {
         self.zoom = zoom
         self.offset = offset
         setNeedsDisplay()
     }
     override func draw(_ rect: CGRect) {
-        guard let ctx = UIGraphicsGetCurrentContext(), !splats.isEmpty else { return }
+        guard let ctx = UIGraphicsGetCurrentContext() else { return }
         let z = zoom, off = offset
-        SprayRenderer.draw(splats, in: ctx, scale: z, clip: bounds,
-                           map: { x, y in CGPoint(x: CGFloat(x) * z - off.x, y: CGFloat(y) * z - off.y) })
+        let map: (Float, Float) -> CGPoint = { x, y in
+            CGPoint(x: CGFloat(x) * z - off.x, y: CGFloat(y) * z - off.y)
+        }
+        SprayRenderer.draw(splats, in: ctx, scale: z, clip: rect, map: map)
+        if let liveSplat { SprayRenderer.draw([liveSplat], in: ctx, scale: z, clip: rect, map: map) }
     }
 }
 
