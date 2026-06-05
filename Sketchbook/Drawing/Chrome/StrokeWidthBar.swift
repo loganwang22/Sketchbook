@@ -1,58 +1,49 @@
 import SwiftUI
 
-/// Always-visible stroke-size control: a wedge bar (thin → thick) with a draggable
-/// handle whose inner dot previews the current size. `fraction` is 0...1.
+/// Kid-friendly stroke-size picker: a row of dots that grow left→right. Tap the size you
+/// want; the chosen one fills with the current colour and gets a ring. `fraction` is 0...1.
 struct StrokeWidthBar: View {
     @Binding var fraction: Double
     var tint: Color = .primary
 
-    private let handle: CGFloat = 34
-    private let height: CGFloat = 34
+    private let presets: [Double] = [0.12, 0.32, 0.54, 0.78, 1.0]
 
     var body: some View {
-        GeometryReader { geo in
-            let w = geo.size.width
-            let f = min(max(fraction, 0), 1)
-            ZStack(alignment: .leading) {
-                Wedge()
-                    .fill(.primary.opacity(0.16))
-                    .frame(height: 18)
-                    .frame(maxHeight: .infinity, alignment: .center)
-                Circle()
-                    .fill(.white)
-                    .overlay(Circle().stroke(.primary.opacity(0.2)))
-                    .overlay(Circle().fill(tint).frame(width: 6 + CGFloat(f) * 18,
-                                                        height: 6 + CGFloat(f) * 18))
-                    .frame(width: handle, height: handle)
-                    .shadow(radius: 1.5)
-                    .offset(x: f * (w - handle))
+        HStack(spacing: 6) {
+            ForEach(presets.indices, id: \.self) { i in
+                dot(i)
             }
-            .frame(height: height)
-            .contentShape(Rectangle())
-            .gesture(DragGesture(minimumDistance: 0).onChanged { v in
-                fraction = min(max((v.location.x - handle / 2) / (w - handle), 0), 1)
-            })
         }
-        .frame(width: 160, height: height)
+        .animation(.spring(response: 0.25, dampingFraction: 0.7), value: selectedIndex)
+        .accessibilityElement(children: .contain)
         .accessibilityLabel("Stroke size")
     }
-}
 
-/// A left-thin, right-thick bar — a visual hint that dragging right grows the stroke.
-private struct Wedge: Shape {
-    func path(in rect: CGRect) -> Path {
-        var p = Path()
-        let midY = rect.midY
-        p.move(to: CGPoint(x: rect.minX, y: midY - 1))
-        p.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
-        p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
-        p.addLine(to: CGPoint(x: rect.minX, y: midY + 1))
-        p.closeSubpath()
-        return p
+    private var selectedIndex: Int {
+        presets.indices.min(by: { abs(presets[$0] - fraction) < abs(presets[$1] - fraction) }) ?? 0
+    }
+
+    private func dot(_ i: Int) -> some View {
+        let isSelected = (i == selectedIndex)
+        let diameter = 8 + CGFloat(presets[i]) * 24      // 8...32
+        return Button {
+            fraction = presets[i]
+        } label: {
+            Circle()
+                .fill(isSelected ? AnyShapeStyle(tint) : AnyShapeStyle(.primary.opacity(0.35)))
+                .frame(width: diameter, height: diameter)
+                .frame(width: 46, height: 46)
+                .background(isSelected ? AnyShapeStyle(.tint.opacity(0.18)) : AnyShapeStyle(.clear),
+                            in: Circle())
+                .overlay(Circle().stroke(.tint, lineWidth: isSelected ? 2.5 : 0).frame(width: 44, height: 44))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Size \(i + 1)")
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
     }
 }
 
 #Preview {
-    @Previewable @State var f = 0.4
-    return StrokeWidthBar(fraction: $f).padding()
+    @Previewable @State var f = 0.5
+    return StrokeWidthBar(fraction: $f, tint: .blue).padding()
 }

@@ -7,12 +7,17 @@ import CoreGraphics
 /// Spray is rendered by the app itself (Core Graphics), not by PencilKit — PencilKit has
 /// no airbrush ink and can't render the fine dots a spray needs.
 struct SpraySplat: Codable, Equatable {
+    /// How the particles are rendered. Optional so splats saved before styles existed
+    /// decode as `.spray`.
+    enum Style: String, Codable { case spray, airbrush, oil }
+    var style: Style?
     var color: ColorRGBA
     var xs: [Float]      // particle centre x (content space)
     var ys: [Float]      // particle centre y (content space)
     var rs: [Float]      // particle radius
     var alphas: [Float]  // particle opacity
 
+    var effectiveStyle: Style { style ?? .spray }
     var count: Int { min(xs.count, ys.count, rs.count, alphas.count) }
 
     /// The content-space bounding box of all particles (for thumbnail framing).

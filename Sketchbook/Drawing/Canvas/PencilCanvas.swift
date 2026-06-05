@@ -23,7 +23,8 @@ struct PencilCanvas: UIViewRepresentable {
     let allowFingerDrawing: Bool
     var photos: [ArtboardPhoto] = []
     var showGrid: Bool = false
-    var sprayActive: Bool = false
+    var customBrushActive: Bool = false               // spray / airbrush / oil selected
+    var customBrushStyle: SpraySplat.Style = .spray
     var eraserActive: Bool = false
     var spraySplats: [SpraySplat] = []
     var sprayRevision: Int = 0
@@ -105,10 +106,10 @@ struct PencilCanvas: UIViewRepresentable {
         // Spray captures the pencil itself; eraser lets PencilKit erase strokes while the
         // recognizer also removes spray. Both modes enable the recognizer; spray also
         // suppresses PencilKit's pen line so the pencil only sprays.
-        // Spray always needs the recognizer; the eraser only needs it when there's spray
-        // to remove (otherwise erasing stays purely PencilKit, untouched).
-        coord.sprayGR?.isEnabled = sprayActive || (eraserActive && !spraySplats.isEmpty)
-        canvas.drawingGestureRecognizer.isEnabled = !sprayActive
+        // Custom brushes always need the recognizer; the eraser only needs it when there's
+        // spray to remove (otherwise erasing stays purely PencilKit, untouched).
+        coord.sprayGR?.isEnabled = customBrushActive || (eraserActive && !spraySplats.isEmpty)
+        canvas.drawingGestureRecognizer.isEnabled = !customBrushActive
         coord.syncWorkingSplatsIfNeeded()
         coord.applyPhotos(photos)
     }
@@ -377,15 +378,16 @@ struct PencilCanvas: UIViewRepresentable {
             case .began:
                 canvas.panGestureRecognizer.isEnabled = false   // a resting palm shouldn't pan
                 lastSprayPoint = point
-                if parent.sprayActive {
-                    liveSplat = SpraySplat(color: parent.sprayColor, xs: [], ys: [], rs: [], alphas: [])
+                if parent.customBrushActive {
+                    liveSplat = SpraySplat(style: parent.customBrushStyle, color: parent.sprayColor,
+                                           xs: [], ys: [], rs: [], alphas: [])
                     stampSpray(from: point, to: point)
                 } else if parent.eraserActive {
                     eraseSpray(at: point)
                 }
             case .changed:
                 let from = lastSprayPoint ?? point
-                if parent.sprayActive {
+                if parent.customBrushActive {
                     stampSpray(from: from, to: point)
                 } else if parent.eraserActive {
                     eraseSpray(from: from, to: point)
@@ -394,7 +396,7 @@ struct PencilCanvas: UIViewRepresentable {
             case .ended, .cancelled, .failed:
                 canvas.panGestureRecognizer.isEnabled = true
                 lastSprayPoint = nil
-                if parent.sprayActive, let live = liveSplat, live.count > 0 {
+                if parent.customBrushActive, let live = liveSplat, live.count > 0 {
                     workingSplats.append(live)
                     liveSplat = nil
                     sprayLayer?.liveSplat = nil
@@ -410,7 +412,8 @@ struct PencilCanvas: UIViewRepresentable {
 
         private func stampSpray(from a: CGPoint, to b: CGPoint) {
             guard liveSplat != nil, liveSplat!.count < maxLiveParticles else { return }
-            SprayRenderer.scatter(into: &liveSplat!, from: a, to: b, nozzle: sprayNozzle)
+            SprayRenderer.scatter(into: &liveSplat!, from: a, to: b,
+                                  nozzle: sprayNozzle, style: liveSplat!.effectiveStyle)
             sprayLayer?.liveSplat = liveSplat
             // Redraw just the affected band.
             sprayLayer?.setNeedsDisplay(dirtyRect(a, b, pad: sprayNozzle * 4 + 6))
