@@ -4,7 +4,7 @@ import UIKit
 enum BrushKind: String, CaseIterable, Identifiable {
     // Order matters: the rail lists them in this order, grouped by `group`.
     case pen, monoline, fountainPen, crayon, paintbrush   // "pen strokes" (PencilKit inks)
-    case spray, airbrush, oil                             // "artist brushes" (app-rendered)
+    case airbrush, oil                                    // "artist brushes" (app-rendered)
     case eraser
 
     var id: String { rawValue }
@@ -13,9 +13,9 @@ enum BrushKind: String, CaseIterable, Identifiable {
     enum Group { case pen, brush }
     var group: Group? {
         switch self {
-        case .spray, .airbrush, .oil: return .brush
-        case .eraser:                 return nil
-        default:                      return .pen
+        case .airbrush, .oil: return .brush
+        case .eraser:         return nil
+        default:              return .pen
         }
     }
 
@@ -23,7 +23,6 @@ enum BrushKind: String, CaseIterable, Identifiable {
     var isCustom: Bool { group == .brush }
     var sprayStyle: SpraySplat.Style? {
         switch self {
-        case .spray:    return .spray
         case .airbrush: return .airbrush
         case .oil:      return .oil
         default:        return nil
@@ -50,7 +49,6 @@ enum BrushKind: String, CaseIterable, Identifiable {
         case .fountainPen: return .custom(.quill)
         case .crayon:      return .custom(.crayon)
         case .paintbrush:  return .symbol("paintbrush.fill")   // watercolor
-        case .spray:       return .custom(.sprayCan)
         case .airbrush:    return .custom(.airbrush)
         case .oil:         return .custom(.oilTube)
         case .eraser:      return .symbol("eraser.fill")
@@ -62,7 +60,6 @@ enum BrushKind: String, CaseIterable, Identifiable {
         switch self {
         case .eraser:     return 12...170
         case .paintbrush: return 5...95
-        case .spray:      return 3...34
         case .airbrush:   return 5...85
         case .oil:        return 7...120
         default:          return 1...42   // pen-like inks: thinner min, wider max
@@ -84,7 +81,7 @@ enum BrushKind: String, CaseIterable, Identifiable {
         case .crayon:      return PKInkingTool(.crayon,      color: color, width: w)
         case .paintbrush:  return PKInkingTool(.watercolor,  color: color, width: w)
         // Custom brushes don't draw via PencilKit; the .pen tool just carries the width.
-        case .spray, .airbrush, .oil: return PKInkingTool(.pen, color: color, width: w)
+        case .airbrush, .oil: return PKInkingTool(.pen, color: color, width: w)
         case .eraser:      return PKEraserTool(.bitmap, width: w)
         }
     }
