@@ -10,15 +10,19 @@ enum SprayRenderer {
     private struct Params {
         var spread: CGFloat, spacing: CGFloat, perSample: Int
         var rMin: CGFloat, rMax: CGFloat, aMin: CGFloat, aMax: CGFloat
+        /// Spread particles evenly over the disc (no dense centre line) vs. clustered near
+        /// the path. Airbrush uses even spread so it leaves no visible stroke trace.
+        var evenSpread: Bool = false
     }
     private static func params(_ style: SpraySplat.Style, nozzle: CGFloat) -> Params {
         switch style {
         case .spray:    // fine hard speckles flung wide
             return Params(spread: max(nozzle * 4, 16), spacing: max(nozzle * 0.5, 2.5), perSample: 7,
                           rMin: 0.8, rMax: 2.4, aMin: 0.35, aMax: 0.9)
-        case .airbrush: // soft translucent dabs that build up near the path
-            return Params(spread: max(nozzle * 1.6, 10), spacing: max(nozzle * 0.35, 2), perSample: 5,
-                          rMin: nozzle * 0.35, rMax: nozzle * 0.7, aMin: 0.04, aMax: 0.12)
+        case .airbrush: // a wide, even, diffuse cloud — no stroke trace
+            return Params(spread: max(nozzle * 3.2, 22), spacing: max(nozzle * 0.6, 4), perSample: 9,
+                          rMin: nozzle * 0.22, rMax: nozzle * 0.5, aMin: 0.025, aMax: 0.07,
+                          evenSpread: true)
         case .oil:      // big opaque dabs hugging the path → a thick, slightly lumpy stroke
             return Params(spread: max(nozzle * 0.35, 2), spacing: max(nozzle * 0.2, 1.5), perSample: 3,
                           rMin: nozzle * 0.45, rMax: nozzle * 0.85, aMin: 0.85, aMax: 1.0)
@@ -34,9 +38,12 @@ enum SprayRenderer {
             let t = CGFloat(s) / CGFloat(steps)
             let c = CGPoint(x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t)
             for _ in 0..<p.perSample {
-                let off = (CGFloat.random(in: -1...1) + CGFloat.random(in: -1...1)) / 2
                 let angle = CGFloat.random(in: 0...(2 * .pi))
-                let dist = off * p.spread
+                // evenSpread: sqrt → uniform over the disc (no hot centre, no trace).
+                // otherwise: sum-of-two-uniforms → clustered near the path.
+                let dist = p.evenSpread
+                    ? p.spread * sqrt(CGFloat.random(in: 0...1))
+                    : (CGFloat.random(in: -1...1) + CGFloat.random(in: -1...1)) / 2 * p.spread
                 splat.xs.append(Float(c.x + cos(angle) * dist))
                 splat.ys.append(Float(c.y + sin(angle) * dist))
                 splat.rs.append(Float(CGFloat.random(in: p.rMin...max(p.rMin, p.rMax))))
