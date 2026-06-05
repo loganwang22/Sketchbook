@@ -60,12 +60,12 @@ enum BrushKind: String, CaseIterable, Identifiable {
     /// Stroke width range (content points) the size control interpolates across.
     var widthRange: ClosedRange<Double> {
         switch self {
-        case .eraser:     return 16...140
-        case .paintbrush: return 8...70
-        case .spray:      return 4...24
-        case .airbrush:   return 8...60
-        case .oil:        return 10...85
-        default:          return 2...28
+        case .eraser:     return 12...170
+        case .paintbrush: return 5...95
+        case .spray:      return 3...34
+        case .airbrush:   return 5...85
+        case .oil:        return 7...120
+        default:          return 1...42   // pen-like inks: thinner min, wider max
         }
     }
 

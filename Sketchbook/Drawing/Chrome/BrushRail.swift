@@ -44,13 +44,16 @@ struct BrushRail: View {
         } label: {
             glyph(brush)
                 .frame(width: 52, height: 52)
-                .background(isSelected ? AnyShapeStyle(.tint.opacity(0.25)) : AnyShapeStyle(.clear),
+                // Selection shown by fill + ring only — no scaleEffect, which used to
+                // enlarge the hit area and swallow taps meant for neighbouring brushes.
+                .background(isSelected ? AnyShapeStyle(.tint.opacity(0.22)) : AnyShapeStyle(.clear),
                             in: Circle())
-                .scaleEffect(isSelected ? 1.15 : 1.0)
+                .overlay(Circle().stroke(.tint, lineWidth: isSelected ? 2.5 : 0))
+                .contentShape(Circle())
         }
         .buttonStyle(.plain)
-        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isSelected)
         .accessibilityLabel(brush.displayName)
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
     }
 
     @ViewBuilder

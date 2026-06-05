@@ -6,7 +6,7 @@ struct StrokeWidthBar: View {
     @Binding var fraction: Double
     var tint: Color = .primary
 
-    private let presets: [Double] = [0.12, 0.32, 0.54, 0.78, 1.0]
+    private let presets: [Double] = [0.0, 0.25, 0.5, 0.75, 1.0]
 
     var body: some View {
         HStack(spacing: 6) {

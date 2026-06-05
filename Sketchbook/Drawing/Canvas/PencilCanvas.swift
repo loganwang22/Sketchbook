@@ -127,17 +127,20 @@ struct PencilCanvas: UIViewRepresentable {
         private var photoRects: [UUID: CGRect] = [:]
         private var photoParams: [UUID: ArtboardPhoto] = [:]
         private weak var gridView: MiziGridView?
-        private weak var sprayLayer: SprayLayerView?
+        private weak var sprayLayer: SprayLayerView?        // draws the ACTIVE stroke only
+        private weak var committedSprayView: UIImageView?   // settled spray, transform-tracked
+        private var committedSprayBBox: CGRect = .null
         private var didApplyInitialZoom = false
         var isApplyingInitialDrawing = false
 
-        // Spray brush state. `workingSplats` is the live copy the layer renders; it syncs
-        // from the model whenever `sprayRevision` changes (load / undo / clear).
+        // Spray brush state. `workingSplats` is the live copy; it syncs from the model
+        // whenever `sprayRevision` changes (load / undo / clear).
         weak var sprayGR: UILongPressGestureRecognizer?
         private var workingSplats: [SpraySplat] = []
         private var liveSplat: SpraySplat?
         private var lastSprayPoint: CGPoint?
         private var lastSprayRevision = -1
+        private var erasing = false
         private let maxLiveParticles = 12000
 
         // Straight-line support: Shift = horizontal/vertical, Control = any angle.
@@ -216,14 +219,22 @@ struct PencilCanvas: UIViewRepresentable {
                 gridView = nil
             }
 
-            // Custom spray-paint layer (always present; empty when there's no spray).
+            // Settled spray is a transform-tracked image (stays in sync with strokes on
+            // zoom/pan, like photos); the draw-based layer renders only the active stroke.
+            if committedSprayView == nil {
+                let iv = UIImageView()
+                iv.isUserInteractionEnabled = false
+                iv.contentMode = .scaleToFill
+                committedSprayView = iv
+                container.addSubview(iv)
+                rebuildCommittedSpray()
+            }
             if sprayLayer == nil {
                 let layer = SprayLayerView()
                 layer.isUserInteractionEnabled = false
                 layer.backgroundColor = .clear
                 layer.contentMode = .redraw
                 layer.frame = container.bounds
-                layer.splats = workingSplats
                 sprayLayer = layer
                 container.addSubview(layer)
             }
@@ -257,11 +268,13 @@ struct PencilCanvas: UIViewRepresentable {
                 photoParams[photo.id] = photo
             }
 
-            // Z-order, bottom to top: grid, trace layers, the canvas, spray, colour layers.
+            // Z-order, bottom to top: grid, trace layers, canvas, committed spray, the
+            // active-stroke layer, colour layers.
             var ordered: [UIView] = []
             if let gridView { ordered.append(gridView) }
             ordered += photos.filter { $0.mode == .trace }.compactMap { photoViews[$0.id] }
             ordered.append(canvas)
+            if let committedSprayView { ordered.append(committedSprayView) }
             if let sprayLayer { ordered.append(sprayLayer) }
             ordered += photos.filter { $0.mode == .coloringPage }.compactMap { photoViews[$0.id] }
             for (index, view) in ordered.enumerated() {
@@ -294,6 +307,13 @@ struct PencilCanvas: UIViewRepresentable {
             if let sprayLayer, let container {
                 sprayLayer.frame = container.bounds
                 sprayLayer.update(zoom: z, offset: off)
+            }
+            // Committed spray tracks zoom/pan by transform — frame-synced with the strokes.
+            if let csv = committedSprayView, !committedSprayBBox.isNull, committedSprayBBox.width > 0 {
+                csv.bounds = CGRect(origin: .zero, size: committedSprayBBox.size)
+                csv.center = CGPoint(x: committedSprayBBox.midX * z - off.x,
+                                     y: committedSprayBBox.midY * z - off.y)
+                csv.transform = CGAffineTransform(scaleX: z, y: z)
             }
             for (id, view) in photoViews {
                 if photoRects[id] == nil { capturePhotoRect(for: id) }
@@ -350,14 +370,25 @@ struct PencilCanvas: UIViewRepresentable {
         // MARK: spray (custom real-time brush)
 
         /// Pulls the latest spray from the model into the working copy when it changed
-        /// outside a live stroke (open, undo/redo, clear).
+        /// outside a live stroke (open, undo/redo, clear), and rebuilds the settled image.
         func syncWorkingSplatsIfNeeded() {
             guard parent.sprayRevision != lastSprayRevision else { return }
             lastSprayRevision = parent.sprayRevision
             workingSplats = parent.spraySplats
-            sprayLayer?.splats = workingSplats
+            if !erasing && liveSplat == nil { rebuildCommittedSpray() }
+        }
+
+        /// Renders the working splats into the settled image and clears the active layer.
+        private func rebuildCommittedSpray() {
+            let (image, bbox) = SprayLayerView.renderImage(workingSplats)
+            committedSprayBBox = bbox
+            committedSprayView?.image = image
+            committedSprayView?.isHidden = (image == nil)
+            sprayLayer?.splats = []
             sprayLayer?.liveSplat = nil
+            sprayLayer?.isHidden = true
             sprayLayer?.setNeedsDisplay()
+            syncPhotos()
         }
 
         /// Two recognizers (PencilKit's eraser + ours) must work together so the eraser
@@ -378,11 +409,20 @@ struct PencilCanvas: UIViewRepresentable {
             case .began:
                 canvas.panGestureRecognizer.isEnabled = false   // a resting palm shouldn't pan
                 lastSprayPoint = point
+                sprayLayer?.isHidden = false
                 if parent.customBrushActive {
+                    // Settled spray stays in its image; only the new stroke draws here.
                     liveSplat = SpraySplat(style: parent.customBrushStyle, color: parent.sprayColor,
                                            xs: [], ys: [], rs: [], alphas: [])
+                    sprayLayer?.splats = []
                     stampSpray(from: point, to: point)
                 } else if parent.eraserActive {
+                    // Erasing edits existing spray, so show the working copy live.
+                    erasing = true
+                    committedSprayView?.isHidden = true
+                    sprayLayer?.splats = workingSplats
+                    sprayLayer?.liveSplat = nil
+                    sprayLayer?.setNeedsDisplay()
                     eraseSpray(at: point)
                 }
             case .changed:
@@ -398,13 +438,11 @@ struct PencilCanvas: UIViewRepresentable {
                 lastSprayPoint = nil
                 if parent.customBrushActive, let live = liveSplat, live.count > 0 {
                     workingSplats.append(live)
-                    liveSplat = nil
-                    sprayLayer?.liveSplat = nil
-                    parent.onSprayCommit(workingSplats)
-                } else if parent.eraserActive {
-                    parent.onSprayCommit(workingSplats)
                 }
                 liveSplat = nil
+                erasing = false
+                rebuildCommittedSpray()              // bake the stroke into the settled image
+                parent.onSprayCommit(workingSplats)  // model + undo
             default:
                 break
             }
@@ -491,16 +529,14 @@ final class ArtboardContainer: UIView {
     }
 }
 
-/// Renders custom spray-paint splats in canvas content space, tracking zoom/pan so the
-/// paint stays put on the canvas (like the grid). Drawn by the app, not PencilKit.
+/// Draws the ACTIVE spray/erase stroke in real time (content space, tracking zoom/pan).
+/// Settled spray lives in a separate transform-tracked image view, so this only ever
+/// renders the in-progress stroke (live spray) or the working copy while erasing.
 final class SprayLayerView: UIView {
-    // Committed spray is cached as one image so pan/zoom just blits it (cheap) instead of
-    // re-running Core Graphics over every particle each frame (which stalled the pinch).
-    var splats: [SpraySplat] = [] { didSet { cache = nil; setNeedsDisplay() } }
-    var liveSplat: SpraySplat?             // the in-progress spray stroke, drawn fresh
+    var splats: [SpraySplat] = [] { didSet { setNeedsDisplay() } }   // working copy (erase)
+    var liveSplat: SpraySplat?                                       // in-progress spray
     private var zoom: CGFloat = 1
     private var offset: CGPoint = .zero
-    private var cache: (image: UIImage, rect: CGRect)?
 
     func update(zoom: CGFloat, offset: CGPoint) {
         self.zoom = zoom
@@ -510,23 +546,19 @@ final class SprayLayerView: UIView {
     override func draw(_ rect: CGRect) {
         guard let ctx = UIGraphicsGetCurrentContext() else { return }
         let z = zoom, off = offset
-        if cache == nil, !splats.isEmpty { cache = renderCache() }
-        if let cache {
-            let r = cache.rect
-            cache.image.draw(in: CGRect(x: r.minX * z - off.x, y: r.minY * z - off.y,
-                                        width: r.width * z, height: r.height * z))
+        let map: (Float, Float) -> CGPoint = { x, y in
+            CGPoint(x: CGFloat(x) * z - off.x, y: CGFloat(y) * z - off.y)
         }
-        if let liveSplat {
-            SprayRenderer.draw([liveSplat], in: ctx, scale: z, clip: rect,
-                               map: { x, y in CGPoint(x: CGFloat(x) * z - off.x, y: CGFloat(y) * z - off.y) })
-        }
+        SprayRenderer.draw(splats, in: ctx, scale: z, clip: rect, map: map)
+        if let liveSplat { SprayRenderer.draw([liveSplat], in: ctx, scale: z, clip: rect, map: map) }
     }
 
-    /// Renders all committed splats once into a content-space image (capped resolution).
-    private func renderCache() -> (UIImage, CGRect)? {
+    /// Renders splats into a content-space image (capped resolution) for the settled layer.
+    /// Returns the image and its content-space bounding box, or (nil, .null) when empty.
+    static func renderImage(_ splats: [SpraySplat]) -> (UIImage?, CGRect) {
         var bbox = CGRect.null
         for s in splats { if let b = s.bounds { bbox = bbox.union(b) } }
-        guard !bbox.isNull, bbox.width > 0, bbox.height > 0 else { return nil }
+        guard !bbox.isNull, bbox.width > 0, bbox.height > 0 else { return (nil, .null) }
         bbox = bbox.insetBy(dx: -4, dy: -4)
         let scale = min(2.0, 2048 / max(bbox.width, bbox.height))   // crisp, but bounded
         let format = UIGraphicsImageRendererFormat.default()
