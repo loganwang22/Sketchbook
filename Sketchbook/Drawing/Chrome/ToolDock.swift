@@ -1,24 +1,21 @@
 import SwiftUI
 
+/// Bottom dock: the stroke-size bar, then colours, then the photo button. Brushes now
+/// live in the left `BrushRail`, not here.
 struct ToolDock: View {
-    @Binding var brush: BrushKind
-    @Binding var size: BrushSize
+    @Binding var widthFraction: Double
     @Binding var color: ColorRGBA
     @Binding var palette: [ColorRGBA]
     let onPhotoTap: () -> Void
-    /// Chinese writing mode: pen + eraser only (no artist brushes), plus the palette.
+    /// Chinese writing mode hides the photo button.
     var writingMode: Bool = false
 
     var body: some View {
         HStack(spacing: 16) {
-            if writingMode {
-                BrushPicker(selectedBrush: $brush, selectedSize: $size, brushes: [.pen, .eraser])
-                Divider().frame(height: 40)
-                ColorPalette(palette: $palette, selectedColor: $color)
-            } else {
-                BrushPicker(selectedBrush: $brush, selectedSize: $size)
-                Divider().frame(height: 40)
-                ColorPalette(palette: $palette, selectedColor: $color)
+            StrokeWidthBar(fraction: $widthFraction, tint: color.swiftUIColor)
+            Divider().frame(height: 40)
+            ColorPalette(palette: $palette, selectedColor: $color)
+            if !writingMode {
                 Divider().frame(height: 40)
                 Button(action: onPhotoTap) {
                     Image(systemName: "camera.fill.badge.ellipsis")
@@ -36,9 +33,8 @@ struct ToolDock: View {
 }
 
 #Preview {
-    @Previewable @State var brush: BrushKind = .pen
-    @Previewable @State var size: BrushSize = .medium
+    @Previewable @State var width = 0.4
     @Previewable @State var color = KidPalette.colors[9].color
     @Previewable @State var palette = KidPalette.colors.map(\.color)
-    return ToolDock(brush: $brush, size: $size, color: $color, palette: $palette, onPhotoTap: {})
+    return ToolDock(widthFraction: $width, color: $color, palette: $palette, onPhotoTap: {})
 }

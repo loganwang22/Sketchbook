@@ -19,7 +19,7 @@ final class DrawingViewModel: ObservableObject {
     @Published var hudMessage: String?   // transient on-screen status (e.g. tool toggle)
     @Published var straightLineActive = false  // Shift held: strokes snap to H/V lines
     @Published var selectedBrush: BrushKind = .pen
-    @Published var selectedSize: BrushSize = .medium
+    @Published var selectedWidth: Double = 0.4   // 0...1 size-slider position
     @Published var selectedColor: ColorRGBA
 
     private(set) var drawing: Drawing
@@ -56,7 +56,7 @@ final class DrawingViewModel: ObservableObject {
     var isChineseWriting: Bool { drawing.kind == .chineseWriting }
 
     var currentTool: PKTool {
-        selectedBrush.pkTool(color: selectedColor.uiColor, size: selectedSize)
+        selectedBrush.pkTool(color: selectedColor.uiColor, fraction: selectedWidth)
     }
 
     private func markDirty() { isDirty = true }

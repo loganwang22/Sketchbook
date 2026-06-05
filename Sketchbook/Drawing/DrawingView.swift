@@ -127,7 +127,7 @@ struct DrawingView: View {
                          spraySplats: viewModel.spraySplats,
                          sprayRevision: viewModel.sprayRevision,
                          sprayColor: viewModel.selectedColor,
-                         eraserRadius: viewModel.selectedSize.eraserWidth / 2,
+                         eraserRadius: BrushKind.eraser.width(fraction: viewModel.selectedWidth) / 2,
                          initialZoom: viewModel.isChineseWriting ? 0.65 : nil,
                          onStrokeEnd: { viewModel.scheduleSave() },
                          onCanvasReady: { viewModel.canvasRef = $0 },
@@ -147,32 +147,39 @@ struct DrawingView: View {
     }
 
     private var chrome: some View {
-        VStack {
-            TopBar(
-                onBack: { try? viewModel.flushSave(); dismiss() },
-                onUndo: { viewModel.undo() },
-                onRedo: { viewModel.redo() },
-                canUndo: viewModel.canUndo, canRedo: viewModel.canRedo,
-                onShare: { showParentGate = .share },
-                onClear: { showParentGate = .clear },
-                onBackgroundColor: { showBackgroundPopover = true },
-                onToggleFingerDrawing: { fingerPref.allowFingerDrawing.toggle() },
-                fingerDrawingOn: fingerPref.allowFingerDrawing,
-                hasPhoto: !viewModel.photoLayers.isEmpty,
-                canEditPhoto: viewModel.hasCanvasPhoto,
-                photoHidden: viewModel.photosHidden,
-                onTogglePhoto: { viewModel.photosHidden.toggle() },
-                onEditPhoto: { viewModel.beginEditingPhotos() },
-                onRemovePhoto: { viewModel.removeAllPhotos() }
-            )
-            Spacer()
-            ToolDock(brush: $viewModel.selectedBrush,
-                     size: $viewModel.selectedSize,
-                     color: $viewModel.selectedColor,
-                     palette: $viewModel.palette,
-                     onPhotoTap: { showPhotoFlow = true },
-                     writingMode: viewModel.isChineseWriting)
-            .padding(.bottom, 12)
+        ZStack {
+            VStack {
+                TopBar(
+                    onBack: { try? viewModel.flushSave(); dismiss() },
+                    onUndo: { viewModel.undo() },
+                    onRedo: { viewModel.redo() },
+                    canUndo: viewModel.canUndo, canRedo: viewModel.canRedo,
+                    onShare: { showParentGate = .share },
+                    onClear: { showParentGate = .clear },
+                    onBackgroundColor: { showBackgroundPopover = true },
+                    onToggleFingerDrawing: { fingerPref.allowFingerDrawing.toggle() },
+                    fingerDrawingOn: fingerPref.allowFingerDrawing,
+                    hasPhoto: !viewModel.photoLayers.isEmpty,
+                    canEditPhoto: viewModel.hasCanvasPhoto,
+                    photoHidden: viewModel.photosHidden,
+                    onTogglePhoto: { viewModel.photosHidden.toggle() },
+                    onEditPhoto: { viewModel.beginEditingPhotos() },
+                    onRemovePhoto: { viewModel.removeAllPhotos() }
+                )
+                Spacer()
+                ToolDock(widthFraction: $viewModel.selectedWidth,
+                         color: $viewModel.selectedColor,
+                         palette: $viewModel.palette,
+                         onPhotoTap: { showPhotoFlow = true },
+                         writingMode: viewModel.isChineseWriting)
+                .padding(.bottom, 12)
+            }
+
+            // Brushes live in a vertical rail on the left edge.
+            BrushRail(selectedBrush: $viewModel.selectedBrush,
+                      writingMode: viewModel.isChineseWriting)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                .padding(.leading, 12)
         }
     }
 
