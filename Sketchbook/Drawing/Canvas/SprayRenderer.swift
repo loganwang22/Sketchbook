@@ -9,12 +9,12 @@ enum SprayRenderer {
     /// in real time as the pencil moves. Dense near the path, sparse at the edges.
     static func scatter(into splat: inout SpraySplat, from a: CGPoint, to b: CGPoint, nozzle: CGFloat) {
         let spread = max(nozzle * 4, 16)
-        let spacing = max(spread * 0.22, 4)
+        let spacing = max(spread * 0.13, 2.5)   // tighter samples = denser spray
         let steps = max(1, Int(hypot(b.x - a.x, b.y - a.y) / spacing))
         for s in 0...steps {
             let t = CGFloat(s) / CGFloat(steps)
             let c = CGPoint(x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t)
-            for _ in 0..<3 {
+            for _ in 0..<7 {
                 let off = (CGFloat.random(in: -1...1) + CGFloat.random(in: -1...1)) / 2
                 let angle = CGFloat.random(in: 0...(2 * .pi))
                 let dist = off * spread

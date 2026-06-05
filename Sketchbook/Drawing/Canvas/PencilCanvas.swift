@@ -137,7 +137,7 @@ struct PencilCanvas: UIViewRepresentable {
         private var liveSplat: SpraySplat?
         private var lastSprayPoint: CGPoint?
         private var lastSprayRevision = -1
-        private let maxLiveParticles = 5000
+        private let maxLiveParticles = 12000
 
         // Straight-line support: Shift = horizontal/vertical, Control = any angle.
         var lastStrokeCount = 0
@@ -491,10 +491,13 @@ final class ArtboardContainer: UIView {
 /// Renders custom spray-paint splats in canvas content space, tracking zoom/pan so the
 /// paint stays put on the canvas (like the grid). Drawn by the app, not PencilKit.
 final class SprayLayerView: UIView {
-    var splats: [SpraySplat] = []          // committed spray (the coordinator's working copy)
-    var liveSplat: SpraySplat?             // the in-progress spray stroke
+    // Committed spray is cached as one image so pan/zoom just blits it (cheap) instead of
+    // re-running Core Graphics over every particle each frame (which stalled the pinch).
+    var splats: [SpraySplat] = [] { didSet { cache = nil; setNeedsDisplay() } }
+    var liveSplat: SpraySplat?             // the in-progress spray stroke, drawn fresh
     private var zoom: CGFloat = 1
     private var offset: CGPoint = .zero
+    private var cache: (image: UIImage, rect: CGRect)?
 
     func update(zoom: CGFloat, offset: CGPoint) {
         self.zoom = zoom
@@ -504,11 +507,35 @@ final class SprayLayerView: UIView {
     override func draw(_ rect: CGRect) {
         guard let ctx = UIGraphicsGetCurrentContext() else { return }
         let z = zoom, off = offset
-        let map: (Float, Float) -> CGPoint = { x, y in
-            CGPoint(x: CGFloat(x) * z - off.x, y: CGFloat(y) * z - off.y)
+        if cache == nil, !splats.isEmpty { cache = renderCache() }
+        if let cache {
+            let r = cache.rect
+            cache.image.draw(in: CGRect(x: r.minX * z - off.x, y: r.minY * z - off.y,
+                                        width: r.width * z, height: r.height * z))
         }
-        SprayRenderer.draw(splats, in: ctx, scale: z, clip: rect, map: map)
-        if let liveSplat { SprayRenderer.draw([liveSplat], in: ctx, scale: z, clip: rect, map: map) }
+        if let liveSplat {
+            SprayRenderer.draw([liveSplat], in: ctx, scale: z, clip: rect,
+                               map: { x, y in CGPoint(x: CGFloat(x) * z - off.x, y: CGFloat(y) * z - off.y) })
+        }
+    }
+
+    /// Renders all committed splats once into a content-space image (capped resolution).
+    private func renderCache() -> (UIImage, CGRect)? {
+        var bbox = CGRect.null
+        for s in splats { if let b = s.bounds { bbox = bbox.union(b) } }
+        guard !bbox.isNull, bbox.width > 0, bbox.height > 0 else { return nil }
+        bbox = bbox.insetBy(dx: -4, dy: -4)
+        let scale = min(2.0, 2048 / max(bbox.width, bbox.height))   // crisp, but bounded
+        let format = UIGraphicsImageRendererFormat.default()
+        format.opaque = false
+        format.scale = 1
+        let size = CGSize(width: bbox.width * scale, height: bbox.height * scale)
+        let image = UIGraphicsImageRenderer(size: size, format: format).image { c in
+            SprayRenderer.draw(splats, in: c.cgContext, scale: scale, clip: nil,
+                               map: { x, y in CGPoint(x: (CGFloat(x) - bbox.minX) * scale,
+                                                      y: (CGFloat(y) - bbox.minY) * scale) })
+        }
+        return (image, bbox)
     }
 }
 
