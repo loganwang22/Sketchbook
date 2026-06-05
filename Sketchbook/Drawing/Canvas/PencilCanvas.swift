@@ -141,7 +141,9 @@ struct PencilCanvas: UIViewRepresentable {
         private var lastSprayPoint: CGPoint?
         private var lastSprayRevision = -1
         private var erasing = false
-        private let maxLiveParticles = 12000
+        /// When the live splat reaches this many particles it's flushed to a chunk and a
+        /// fresh one started, so brushing never hits a hard cap and stops mid-stroke.
+        private let liveSplatFlush = 2500
 
         // Straight-line support: Shift = horizontal/vertical, Control = any angle.
         var lastStrokeCount = 0
@@ -412,8 +414,7 @@ struct PencilCanvas: UIViewRepresentable {
                 sprayLayer?.isHidden = false
                 if parent.customBrushActive {
                     // Settled spray stays in its image; only the new stroke draws here.
-                    liveSplat = SpraySplat(style: parent.customBrushStyle, color: parent.sprayColor,
-                                           xs: [], ys: [], rs: [], alphas: [])
+                    liveSplat = freshLiveSplat()
                     sprayLayer?.splats = []
                     stampSpray(from: point, to: point)
                 } else if parent.eraserActive {
@@ -436,8 +437,9 @@ struct PencilCanvas: UIViewRepresentable {
             case .ended, .cancelled, .failed:
                 canvas.panGestureRecognizer.isEnabled = true
                 lastSprayPoint = nil
-                if parent.customBrushActive, let live = liveSplat, live.count > 0 {
-                    workingSplats.append(live)
+                if parent.customBrushActive {
+                    if let live = liveSplat, live.count > 0 { sprayLayer?.splats.append(live) }
+                    workingSplats.append(contentsOf: sprayLayer?.splats ?? [])  // chunks + last
                 }
                 liveSplat = nil
                 erasing = false
@@ -448,10 +450,23 @@ struct PencilCanvas: UIViewRepresentable {
             }
         }
 
+        private func freshLiveSplat() -> SpraySplat {
+            let oil = parent.customBrushStyle == .oil
+            return SpraySplat(style: parent.customBrushStyle, color: parent.sprayColor,
+                              xs: [], ys: [], rs: [], alphas: [],
+                              dirs: oil ? [] : nil, vs: oil ? [] : nil)
+        }
+
         private func stampSpray(from a: CGPoint, to b: CGPoint) {
-            guard liveSplat != nil, liveSplat!.count < maxLiveParticles else { return }
+            guard liveSplat != nil else { return }
             SprayRenderer.scatter(into: &liveSplat!, from: a, to: b,
                                   nozzle: sprayNozzle, style: liveSplat!.effectiveStyle)
+            // Flush to a chunk so a single splat never grows unbounded (which used to make
+            // the brush stop rendering after a few seconds); brushing then continues.
+            if liveSplat!.count >= liveSplatFlush {
+                sprayLayer?.splats.append(liveSplat!)
+                liveSplat = freshLiveSplat()
+            }
             sprayLayer?.liveSplat = liveSplat
             // Redraw just the affected band.
             sprayLayer?.setNeedsDisplay(dirtyRect(a, b, pad: sprayNozzle * 4 + 6))

@@ -16,18 +16,25 @@ struct SpraySplat: Codable, Equatable {
     var ys: [Float]      // particle centre y (content space)
     var rs: [Float]      // particle radius
     var alphas: [Float]  // particle opacity
+    /// Oil only: per-dab orientation (radians) and brightness offset, giving Van Gogh
+    /// directional impasto streaks with value variation. Nil for spray/airbrush.
+    var dirs: [Float]? = nil
+    var vs: [Float]? = nil
 
     var effectiveStyle: Style { style ?? .spray }
     var count: Int { min(xs.count, ys.count, rs.count, alphas.count) }
 
-    /// The content-space bounding box of all particles (for thumbnail framing).
+    /// The content-space bounding box of all particles (for thumbnail framing). Oil dabs
+    /// are elongated, so their extent is widened.
     var bounds: CGRect? {
         guard count > 0 else { return nil }
+        let stretch: Float = effectiveStyle == .oil ? 2.6 : 1
         var minX = Float.greatestFiniteMagnitude, minY = Float.greatestFiniteMagnitude
         var maxX = -Float.greatestFiniteMagnitude, maxY = -Float.greatestFiniteMagnitude
         for i in 0..<count {
-            minX = min(minX, xs[i] - rs[i]); maxX = max(maxX, xs[i] + rs[i])
-            minY = min(minY, ys[i] - rs[i]); maxY = max(maxY, ys[i] + rs[i])
+            let e = rs[i] * stretch
+            minX = min(minX, xs[i] - e); maxX = max(maxX, xs[i] + e)
+            minY = min(minY, ys[i] - e); maxY = max(maxY, ys[i] + e)
         }
         return CGRect(x: CGFloat(minX), y: CGFloat(minY),
                       width: CGFloat(maxX - minX), height: CGFloat(maxY - minY))
