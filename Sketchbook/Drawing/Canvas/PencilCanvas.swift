@@ -416,6 +416,7 @@ struct PencilCanvas: UIViewRepresentable {
                     // Settled spray stays in its image; only the new stroke draws here.
                     liveSplat = freshLiveSplat()
                     sprayLayer?.splats = []
+                    sprayLayer?.setNeedsDisplay()   // clear any residual before the new stroke
                     stampSpray(from: point, to: point)
                 } else if parent.eraserActive {
                     // Erasing edits existing spray, so show the working copy live.
@@ -548,7 +549,10 @@ final class ArtboardContainer: UIView {
 /// Settled spray lives in a separate transform-tracked image view, so this only ever
 /// renders the in-progress stroke (live spray) or the working copy while erasing.
 final class SprayLayerView: UIView {
-    var splats: [SpraySplat] = [] { didSet { setNeedsDisplay() } }   // working copy (erase)
+    // No didSet redraw: appending a flushed chunk must NOT trigger a full-view redraw of
+    // every particle (that grew with stroke length and made long strokes very laggy).
+    // Callers invalidate explicitly — a dirty rect for live strokes, full only when needed.
+    var splats: [SpraySplat] = []                                    // working copy (erase)
     var liveSplat: SpraySplat?                                       // in-progress spray
     private var zoom: CGFloat = 1
     private var offset: CGPoint = .zero
@@ -575,7 +579,9 @@ final class SprayLayerView: UIView {
         for s in splats { if let b = s.bounds { bbox = bbox.union(b) } }
         guard !bbox.isNull, bbox.width > 0, bbox.height > 0 else { return (nil, .null) }
         bbox = bbox.insetBy(dx: -4, dy: -4)
-        let scale = min(2.0, 2048 / max(bbox.width, bbox.height))   // crisp, but bounded
+        // Render well above screen density so a large spray doesn't read as a low-res
+        // photo. Bounded by a max pixel dimension to keep memory sane.
+        let scale = min(3.0, 4096 / max(bbox.width, bbox.height))
         let format = UIGraphicsImageRendererFormat.default()
         format.opaque = false
         format.scale = 1

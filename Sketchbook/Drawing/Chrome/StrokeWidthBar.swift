@@ -36,6 +36,9 @@ struct StrokeWidthBar: View {
                 .background(isSelected ? AnyShapeStyle(.tint.opacity(0.18)) : AnyShapeStyle(.clear),
                             in: Circle())
                 .overlay(Circle().stroke(.tint, lineWidth: isSelected ? 2.5 : 0).frame(width: 44, height: 44))
+                // Whole 46×46 cell is tappable — otherwise only the tiny dot is, so small
+                // sizes needed a second, more precise tap.
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Size \(i + 1)")

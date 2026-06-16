@@ -20,8 +20,8 @@ enum SprayRenderer {
             return Params(spread: max(nozzle * 4, 16), spacing: max(nozzle * 0.5, 2.5), perSample: 7,
                           rMin: 0.8, rMax: 2.4, aMin: 0.35, aMax: 0.9)
         case .airbrush: // a wide, even cloud — no stroke trace, but lays down real paint
-            return Params(spread: max(nozzle * 2.8, 20), spacing: max(nozzle * 0.4, 3), perSample: 16,
-                          rMin: nozzle * 0.28, rMax: nozzle * 0.62, aMin: 0.06, aMax: 0.16,
+            return Params(spread: max(nozzle * 2.8, 20), spacing: max(nozzle * 0.45, 3), perSample: 12,
+                          rMin: nozzle * 0.28, rMax: nozzle * 0.62, aMin: 0.08, aMax: 0.2,
                           evenSpread: true)
         case .oil:      // spaced, elongated, opaque dabs → Van Gogh directional impasto
             return Params(spread: max(nozzle * 0.3, 2), spacing: max(nozzle * 0.55, 3), perSample: 2,
